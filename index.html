@@ -300,7 +300,9 @@ function render(){
       if (childCenters[0] !== startX) d += ` H${childCenters[0]}`;
       d += ` V${childTop}`;
     } else {
-      d += ` M${childCenters[0]},${busY} H${childCenters[childCenters.length - 1]}`;
+      const branchStart = Math.min(startX, childCenters[0]);
+      const branchEnd = Math.max(startX, childCenters[childCenters.length - 1]);
+      d += ` M${branchStart},${busY} H${branchEnd}`;
       childCenters.forEach(cx => { d += ` M${cx},${busY} V${childTop}`; });
     }
     paths += `<path d="${d}" fill="none" stroke="#10202c" stroke-width="2"/>`;
