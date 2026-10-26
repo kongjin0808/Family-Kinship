@@ -277,6 +277,7 @@ function render(){
   svg.setAttribute("width", L.totalW); svg.setAttribute("height", L.totalH);
   const names = ["Generation 1 · 第一代", "Generation 2 · 第二代", "Generation 3 · 第三代", "Generation 4 · 第四代", "Generation 5 · 第五代", "Generation 6 · 第六代"];
   [...new Set(Object.values(gen))].sort((a, b) => a - b).forEach(g => {
+    if (g === 0) return; // Keep the oldest generation unboxed and unlabeled.
     const box = document.createElement("div"); box.className = "tier-box"; box.dataset.generation = g;
     box.style.left = "4px"; box.style.top = (62 + g * (H + GY) - 44) + "px";
     box.style.width = (L.totalW - 8) + "px"; box.style.height = (H + 52) + "px"; stage.appendChild(box);
@@ -284,11 +285,38 @@ function render(){
     t.style.top = (62 + g * (H + GY) - 40) + "px"; stage.appendChild(t);
   });
   let paths = "";
+  const siblingGroups = new Map();
   data.people.forEach(p => {
-    const ps = [data.byId[p.father], data.byId[p.mother]].filter(Boolean); if (!ps.length) return;
-    const ax = ps.map(x => L.pos[x.id].x + W / 2).reduce((a, b) => a + b) / ps.length;
-    const ay = L.pos[ps[0].id].y + H, cx = L.pos[p.id].x + W / 2, cy = L.pos[p.id].y, my = (ay + cy) / 2;
-    paths += `<path d="M${ax},${ay} V${my} H${cx} V${cy}" fill="none" stroke="#10202c" stroke-width="2"/>`;
+    if (!p.father && !p.mother) return;
+    const key = `${p.father || ""}|${p.mother || ""}`;
+    if (!siblingGroups.has(key)) siblingGroups.set(key, []);
+    siblingGroups.get(key).push(p);
+  });
+  siblingGroups.forEach(children => {
+    const sample = children[0];
+    const father = data.byId[sample.father], mother = data.byId[sample.mother];
+    const parentA = father || mother, parentB = father && mother;
+    const posA = L.pos[parentA.id], posB = parentB && L.pos[parentB.id];
+    const childTop = Math.min(...children.map(p => L.pos[p.id].y));
+    const childCenters = children.map(p => L.pos[p.id].x + W / 2).sort((a, b) => a - b);
+    const parentBottom = Math.max(posA.y + H, posB ? posB.y + H : 0);
+    const busY = parentBottom + (childTop - parentBottom) / 2;
+    const linkedCouple = parentB && (parentA.spouse === parentB.id || parentB.spouse === parentA.id);
+    const coupleLeft = linkedCouple && (posA.x <= posB.x ? posA : posB);
+    const coupleRight = linkedCouple && (posA.x <= posB.x ? posB : posA);
+    const startX = linkedCouple
+      ? (coupleLeft.x + W + coupleRight.x) / 2
+      : posB ? (posA.x + posB.x + W) / 2 : posA.x + W / 2;
+    const startY = linkedCouple ? coupleLeft.y + H / 2 : parentBottom;
+    let d = `M${startX},${startY} V${busY}`;
+    if (childCenters.length === 1) {
+      if (childCenters[0] !== startX) d += ` H${childCenters[0]}`;
+      d += ` V${childTop}`;
+    } else {
+      d += ` M${childCenters[0]},${busY} H${childCenters[childCenters.length - 1]}`;
+      childCenters.forEach(cx => { d += ` M${cx},${busY} V${childTop}`; });
+    }
+    paths += `<path d="${d}" fill="none" stroke="#10202c" stroke-width="2"/>`;
   });
   data.people.forEach(p => {
     const s = data.byId[p.spouse]; if (!s || p.id > s.id) return;
