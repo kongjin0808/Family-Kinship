@@ -35,8 +35,6 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 #viewport.drag{cursor:grabbing}
 #stage{position:absolute;left:0;top:0;transform-origin:0 0}
 #lines{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
-.tier-box{position:absolute;border:2px solid #8795a0;border-radius:20px;background:transparent;pointer-events:none}
-.tier-label{position:absolute;left:14px;top:7px;font:700 19px var(--sans);color:#17324a;background:#fff;padding:2px 9px;border-radius:8px}
 .card{position:absolute;width:220px;height:126px;background:#fff;border:3px solid #66717a;border-radius:18px;
   box-shadow:0 3px 10px rgba(16,32,44,.2);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px;padding:16px 18px 12px;cursor:pointer;user-select:none;-webkit-user-select:none}
 .card.male{background:#e1efff;border-color:#427bb5}
@@ -275,15 +273,6 @@ function render(){
   stage.querySelectorAll(".card,.tier-box,.tier-label").forEach(n => n.remove());
   stage.style.width = L.totalW + "px"; stage.style.height = L.totalH + "px";
   svg.setAttribute("width", L.totalW); svg.setAttribute("height", L.totalH);
-  const names = ["Generation 1 · 第一代", "Generation 2 · 第二代", "Generation 3 · 第三代", "Generation 4 · 第四代", "Generation 5 · 第五代", "Generation 6 · 第六代"];
-  [...new Set(Object.values(gen))].sort((a, b) => a - b).forEach(g => {
-    if (g === 0) return; // Keep the oldest generation unboxed and unlabeled.
-    const box = document.createElement("div"); box.className = "tier-box"; box.dataset.generation = g;
-    box.style.left = "4px"; box.style.top = (62 + g * (H + GY) - 44) + "px";
-    box.style.width = (L.totalW - 8) + "px"; box.style.height = (H + 52) + "px"; stage.appendChild(box);
-    const t = document.createElement("div"); t.className = "tier-label"; t.textContent = names[g] || "Generation " + (g + 1);
-    t.style.top = (62 + g * (H + GY) - 40) + "px"; stage.appendChild(t);
-  });
   let paths = "";
   const siblingGroups = new Map();
   data.people.forEach(p => {
