@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>亲戚称呼 · Family Kinship</title>
+<style>
+:root{
+  --bg:#e9eef0; --panel:#fff; --ink:#10202c; --muted:#44555f; --line:#9fb0bb;
+  --a:#1d4ed8; --a-soft:#dbe6ff; --b:#c2410c; --b-soft:#ffe4d3;
+  --serif:"Noto Serif SC","Songti SC","STSong","SimSun",serif;
+  --sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);display:flex;flex-direction:column;overflow:hidden}
+header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var(--ink);z-index:5}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.top b{font:700 18px var(--serif)}
+#logout{min-height:36px;padding:0 12px;border:2px solid var(--ink);border-radius:18px;background:#fff;font:600 13px var(--sans);color:var(--ink);cursor:pointer}
+#clear{min-height:40px;padding:0 14px;border:2px solid var(--ink);border-radius:12px;background:#fff;font:700 15px var(--sans);color:var(--ink);cursor:pointer}
+.pick{display:flex;gap:8px}
+.pick button{flex:1;min-height:56px;border:2px solid var(--ink);background:#fff;border-radius:12px;font:700 18px var(--serif);color:var(--ink);text-align:left;padding:6px 10px;cursor:pointer}
+.pick button small{display:block;font:400 13px var(--sans);color:var(--muted)}
+.pick button[data-role=A].on{background:var(--a-soft);border-color:var(--a);box-shadow:0 0 0 2px var(--a)}
+.pick button[data-role=B].on{background:var(--b-soft);border-color:var(--b);box-shadow:0 0 0 2px var(--b)}
+#banner{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--ink);color:#fff;line-height:1.5;min-height:68px;font-size:16px}
+#banner .row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+#banner .t{font:700 28px var(--serif)}
+#banner .chain{font-size:13px;opacity:.75;margin-top:2px}
+#banner .err{color:#ffd2b8}
+#viewport{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;cursor:grab;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:40px 40px;background-blend-mode:multiply}
+#viewport.drag{cursor:grabbing}
+#stage{position:absolute;left:0;top:0;transform-origin:0 0}
+#lines{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.tier-box{position:absolute;border:2px solid #8795a0;border-radius:20px;background:transparent;pointer-events:none}
+.tier-label{position:absolute;left:14px;top:7px;font:700 19px var(--sans);color:#17324a;background:#fff;padding:2px 9px;border-radius:8px}
+.card{position:absolute;width:220px;height:126px;background:#fff;border:3px solid #66717a;border-radius:18px;
+  box-shadow:0 3px 10px rgba(16,32,44,.2);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px;padding:16px 18px 12px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.card.male{background:#e1efff;border-color:#427bb5}
+.card.female{background:#ffe6ee;border-color:#bd6682}
+.card .n{width:100%;text-align:center;font:700 21px/1.2 var(--serif);overflow-wrap:anywhere;}
+.card .y{font-size:16px;color:#344957}
+.card .g{position:absolute;top:5px;right:9px;font-size:16px;color:#263a4a}
+.card.A{border-color:var(--a);box-shadow:0 0 0 4px var(--a),0 3px 10px rgba(16,32,44,.2)}
+.card.B{border-color:var(--b);box-shadow:0 0 0 4px var(--b),0 3px 10px rgba(16,32,44,.2)}
+.card .tag{position:absolute;left:-3px;top:-14px;font:700 13px var(--sans);color:#fff;padding:1px 9px;border-radius:9px}
+.card.A .tag{background:var(--a)}.card.B .tag{background:var(--b)}
+#zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:8px}
+#zoom button{width:48px;height:48px;border-radius:12px;border:2px solid var(--ink);background:#fff;font:700 22px var(--sans);cursor:pointer;box-shadow:0 2px 6px rgba(16,32,44,.2)}
+#status{position:absolute;left:10px;bottom:10px;font-size:13px;color:var(--muted);background:#ffffffe0;padding:2px 8px;border-radius:8px}
+#gate{position:fixed;inset:0;background:rgba(16,32,44,.72);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+#gate.show{display:flex}
+#gate form{background:#fff;border-radius:16px;padding:22px;width:100%;max-width:380px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+#gate h2{margin:0 0 4px;font:700 22px var(--serif)}
+#gate p{margin:0 0 14px;color:var(--muted)}
+#gate input{width:100%;min-height:52px;font:600 20px var(--sans);padding:0 12px;border:2px solid var(--ink);border-radius:10px}
+#gate button{width:100%;min-height:52px;margin-top:12px;border:0;border-radius:10px;background:var(--a);color:#fff;font:700 18px var(--sans);cursor:pointer}
+#gate button:disabled{opacity:.6}
+#gate .msg{margin-top:10px;color:#b42318;font-weight:600;min-height:20px}
+@media(max-width:600px){
+  header{padding:8px 9px}
+  .top{gap:8px}.top b{font-size:16px}#logout{min-height:42px;padding:0 9px;font-size:12px}
+  .pick{gap:6px}.pick button{min-height:62px;font-size:17px;padding:6px 8px}.pick button small{font-size:12px}
+  #clear{width:100%;min-height:46px;margin-top:7px;font-size:16px}
+  #banner{font-size:15px;min-height:64px;padding:8px 10px}#banner .t{font-size:23px}
+  #zoom{right:8px;bottom:8px;gap:7px}#zoom button{width:50px;height:50px}
+  #status{max-width:calc(100% - 72px);font-size:12px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><b>亲戚称呼 Family Kinship</b><button id="logout">Change Passcode / 退出</button></div>
+  <div class="pick">
+    <button data-role="A" class="on"><small>Person A · 我 (Me)</small><span id="nameA">Tap a card</span></button>
+    <button data-role="B"><small>Person B · 亲戚 (Relative)</small><span id="nameB">Tap a card</span></button>
+  </div>
+  <button id="clear" type="button">Clear selections / 清除选择</button>
+  <div id="banner"></div>
+</header>
+<div id="viewport">
+  <div id="stage"><svg id="lines"></svg></div>
+  <div id="zoom"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="zfit" aria-label="Fit to screen">⤢</button></div>
+  <div id="status"></div>
+</div>
+
+<div id="gate" role="dialog" aria-modal="true" aria-labelledby="gtitle">
+  <form id="gform">
+    <h2 id="gtitle">Enter Family Passcode / 输入家族密码</h2>
+    <p>Ask a family member if you don't know it.</p>
+    <input id="gkey" type="password" autocomplete="current-password" aria-label="Passcode" required>
+    <button id="gbtn" type="submit">Enter / 进入</button>
+    <div class="msg" id="gmsg" role="alert"></div>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/relationship.js/dist/relationship.min.js"></script>
+<script>
+/* ---------- CONFIG ---------- */
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyD2y2MyeEyfJVcwB5MSyh0ktVdWF0nCXgKtN8pm3hPOCM01fDADU7ps_gEdqBfnsW4g/exec";
+const KEY_NAME = "kinship_passkey";
+const DEMO = APPS_SCRIPT_URL.startsWith("YOUR_");   // placeholder not replaced → demo data
+
+const MOCK_ROWS = [
+  {ID:"1", Name:"王建国", Gender:"M", Father_ID:null, Mother_ID:null, Spouse_ID:"2", Birth_Year:1940, Sibling_Rank:1},
+  {ID:"2", Name:"李美华", Gender:"F", Father_ID:null, Mother_ID:null, Spouse_ID:"1", Birth_Year:1943, Sibling_Rank:1},
+  {ID:"3", Name:"王大伟", Gender:"M", Father_ID:"1", Mother_ID:"2", Spouse_ID:"4", Birth_Year:1968, Sibling_Rank:1},
+  {ID:"4", Name:"陈丽娟", Gender:"F", Father_ID:null, Mother_ID:null, Spouse_ID:"3", Birth_Year:1970, Sibling_Rank:1},
+  {ID:"5", Name:"王晓明", Gender:"M", Father_ID:"3", Mother_ID:"4", Spouse_ID:null, Birth_Year:1995, Sibling_Rank:1},
+  {ID:"6", Name:"王小雨", Gender:"F", Father_ID:"3", Mother_ID:"4", Spouse_ID:null, Birth_Year:1998, Sibling_Rank:2}
+];
+
+/* ---------- DATA ---------- */
+const sid = v => (v === undefined || v === null || String(v).trim() === "") ? null : String(v).trim();
+
+function normalize(rows){
+  const people = rows.map(r => ({
+    id: sid(r.ID), name: sid(r.Name),
+    gender: /^(f|female|女)/i.test(sid(r.Gender)||"") ? "F" : /^(m|male|男)/i.test(sid(r.Gender)||"") ? "M" : null,
+    father: sid(r.Father_ID), mother: sid(r.Mother_ID), spouse: sid(r.Spouse_ID),
+    birth: Number(sid(r.Birth_Year)) || 0,
+    rank: sid(r.Sibling_Rank) === null ? null : Number(sid(r.Sibling_Rank))
+  })).filter(p => p.id && p.name);
+  const byId = Object.fromEntries(people.map(p => [p.id, p]));
+  people.forEach(p => { if (p.spouse && byId[p.spouse] && !byId[p.spouse].spouse) byId[p.spouse].spouse = p.id; });
+  people.forEach(p => {
+    if (byId[p.father]) byId[p.father].gender ||= "M";
+    if (byId[p.mother]) byId[p.mother].gender ||= "F";
+  });
+  people.forEach(p => { const s = byId[p.spouse]; if (s && s.gender && !p.gender) p.gender = s.gender === "M" ? "F" : "M"; });
+  people.forEach(p => p.gender ||= "M");
+  return {people, byId};
+}
+
+/* ---------- AUTH FLOW ---------- */
+const $ = s => document.querySelector(s);
+const gate = $("#gate");
+function askPass(msg = ""){ $("#gmsg").textContent = msg; $("#gkey").value = ""; $("#gbtn").disabled = false; gate.classList.add("show"); setTimeout(() => $("#gkey").focus(), 50); }
+
+async function load(key){
+  $("#gbtn").disabled = true; setStatus("Loading… 加载中");
+  try {
+    const res = await fetch(`${APPS_SCRIPT_URL}?key=${encodeURIComponent(key)}`);
+    const json = await res.json();
+    if (!res.ok || !json || !["ok", "success"].includes(json.status) || !Array.isArray(json.data)){
+      localStorage.removeItem(KEY_NAME);
+      askPass(json && json.status === "error"
+        ? "Invalid passcode, please try again. / 密码错误，请重试"
+        : "The server returned an unexpected response. / 服务器返回了异常响应");
+      return;
+    }
+    localStorage.setItem(KEY_NAME, key);
+    gate.classList.remove("show"); setStatus("");
+    boot(normalize(json.data));
+  } catch (e) {
+    askPass("Cannot reach the server. Check your connection and try again. / 无法连接服务器");
+  }
+}
+
+$("#gform").addEventListener("submit", e => {
+  e.preventDefault();
+  const key = $("#gkey").value.trim(); if (!key) return;
+  load(key);
+});
+$("#logout").onclick = () => {
+  localStorage.removeItem(KEY_NAME);
+  selA = selB = null; role = "A";
+  if (DEMO){ paint(); setStatus("Demo data — passcode cleared"); } else askPass();
+};
+
+/* ---------- GENERATIONS & LAYOUT ---------- */
+function computeGenerations({people, byId}){
+  const gen = {};
+  people.forEach(p => { if (!p.father && !p.mother) gen[p.id] = 0; });
+  for (let n = 0; n < people.length + 2; n++){
+    people.forEach(p => {
+      const ps = [byId[p.father], byId[p.mother]].filter(x => x && gen[x.id] !== undefined);
+      if (ps.length) gen[p.id] = Math.max(...ps.map(x => gen[x.id])) + 1;
+      else if (!p.father && !p.mother && p.spouse && byId[p.spouse] && (byId[p.spouse].father || byId[p.spouse].mother) && gen[p.spouse] !== undefined)
+        gen[p.id] = gen[p.spouse];   // married-in partner sits in the spouse's tier
+    });
+  }
+  people.forEach(p => { if (gen[p.id] === undefined) gen[p.id] = 0; });
+  return gen;
+}
+
+const W = 220, H = 126, GX = 30, GY = 92;
+function layout({people, byId}, gen){
+  const tiers = {}; people.forEach(p => (tiers[gen[p.id]] ||= []).push(p));
+  const maxN = Math.max(1, ...Object.values(tiers).map(t => t.length));
+  const totalW = maxN * (W + GX) - GX + 40, pos = {};
+  Object.keys(tiers).map(Number).sort((a, b) => a - b).forEach(g => {
+    const px = p => { const xs = [byId[p.father], byId[p.mother]].filter(x => x && pos[x.id]).map(x => pos[x.id].x); return xs.length ? xs.reduce((a, b) => a + b) / xs.length : null; };
+    const keyOf = p => { let k = px(p); if (k === null && p.spouse && byId[p.spouse]) { const s = px(byId[p.spouse]); if (s !== null) k = s + 0.1; } return [k === null ? -1 : k, p.rank ?? 99, p.birth]; };
+    const sorted = [...tiers[g]].sort((a, b) => { const x = keyOf(a), y = keyOf(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; });
+    const order = [], seen = new Set();
+    sorted.forEach(p => {
+      if (seen.has(p.id)) return;
+      const s = byId[p.spouse];
+      if (s && gen[s.id] === g) {
+        const pair = p.gender === "F" ? [s, p] : [p, s];
+        pair.forEach(person => { if (!seen.has(person.id)) { seen.add(person.id); order.push(person); } });
+      } else { seen.add(p.id); order.push(p); }
+    });
+    const rowW = order.length * (W + GX) - GX;
+    const start = 20 + (totalW - 40 - rowW) / 2;
+    order.forEach((p, i) => pos[p.id] = {x: start + i * (W + GX), y: 62 + g * (H + GY)});
+  });
+  return {pos, totalW, totalH: 62 + Object.keys(tiers).length * (H + GY) + 24};
+}
+
+/* ---------- KINSHIP ENGINE ---------- */
+const WORD = {f:"爸爸", m:"妈妈", s:"儿子", d:"女儿", h:"丈夫", w:"妻子", ob:"哥哥", lb:"弟弟", os:"姐姐", ls:"妹妹"};
+
+function buildGraph({people, byId}){
+  const adj = Object.fromEntries(people.map(p => [p.id, []]));
+  const add = (a, b, t) => adj[a].push({to: b, t});
+  people.forEach(p => {
+    [p.father, p.mother].forEach(pid => {
+      const par = byId[pid]; if (!par) return;
+      add(par.id, p.id, p.gender === "M" ? "s" : "d");      // parent → child
+      add(p.id, par.id, par.gender === "M" ? "f" : "m");    // child → parent
+    });
+    const sp = byId[p.spouse];
+    if (sp) add(p.id, sp.id, sp.gender === "M" ? "h" : "w"); // spouse → spouse
+  });
+  people.forEach(a => people.forEach(b => {                  // siblings: share a parent
+    if (a.id === b.id) return;
+    if (!((a.father && a.father === b.father) || (a.mother && a.mother === b.mother))) return;
+    const bOlder = (a.rank != null && b.rank != null && a.rank !== b.rank) ? b.rank < a.rank : b.birth < a.birth;
+    add(a.id, b.id, (bOlder ? "o" : "l") + (b.gender === "M" ? "b" : "s"));
+  }));
+  return adj;
+}
+
+function shortestChain(adj, from, to){
+  if (from === to) return [];
+  const prev = {[from]: null}, queue = [from];
+  for (let i = 0; i < queue.length; i++){
+    for (const e of adj[queue[i]]){
+      if (e.to in prev) continue;
+      prev[e.to] = {from: queue[i], t: e.t};
+      if (e.to === to){ const c = []; let n = to; while (prev[n]) { c.unshift(prev[n].t); n = prev[n].from; } return c; }
+      queue.push(e.to);
+    }
+  }
+  return null;
+}
+
+function titlesFor(chain, aGender){
+  const text = chain.map(t => WORD[t]).join("的"), sex = aGender === "M" ? 1 : 0;
+  if (typeof relationship !== "function") return {text, error: "relationship.js did not load (check your connection)."};
+  const pick = r => Array.isArray(r) ? r[0] : r;
+  return {text, to: pick(relationship({text, sex})), back: pick(relationship({text, sex, reverse: true}))};
+}
+
+/* ---------- UI ---------- */
+let data, gen, L, adj, selA = null, selB = null, role = "A";
+const stage = $("#stage"), vp = $("#viewport"), svg = $("#lines");
+let view = {x: 0, y: 0, k: 1};
+function setStatus(t){ $("#status").textContent = t; }
+
+function boot(d){
+  data = d; selA = selB = null; role = "A";
+  if (!data.people.length){ stage.querySelectorAll(".card,.tier-box,.tier-label").forEach(n => n.remove()); svg.innerHTML = ""; $("#banner").innerHTML = '<span class="err">No named people found in the data. 没有找到有姓名的人员</span>'; return; }
+  gen = computeGenerations(data); L = layout(data, gen); adj = buildGraph(data);
+  render(); fit();
+  if (DEMO) setStatus("Demo data — set APPS_SCRIPT_URL to use your family");
+}
+
+function render(){
+  stage.querySelectorAll(".card,.tier-box,.tier-label").forEach(n => n.remove());
+  stage.style.width = L.totalW + "px"; stage.style.height = L.totalH + "px";
+  svg.setAttribute("width", L.totalW); svg.setAttribute("height", L.totalH);
+  const names = ["Generation 1 · 第一代", "Generation 2 · 第二代", "Generation 3 · 第三代", "Generation 4 · 第四代", "Generation 5 · 第五代", "Generation 6 · 第六代"];
+  [...new Set(Object.values(gen))].sort((a, b) => a - b).forEach(g => {
+    const box = document.createElement("div"); box.className = "tier-box"; box.dataset.generation = g;
+    box.style.left = "4px"; box.style.top = (62 + g * (H + GY) - 44) + "px";
+    box.style.width = (L.totalW - 8) + "px"; box.style.height = (H + 52) + "px"; stage.appendChild(box);
+    const t = document.createElement("div"); t.className = "tier-label"; t.textContent = names[g] || "Generation " + (g + 1);
+    t.style.top = (62 + g * (H + GY) - 40) + "px"; stage.appendChild(t);
+  });
+  let paths = "";
+  data.people.forEach(p => {
+    const ps = [data.byId[p.father], data.byId[p.mother]].filter(Boolean); if (!ps.length) return;
+    const ax = ps.map(x => L.pos[x.id].x + W / 2).reduce((a, b) => a + b) / ps.length;
+    const ay = L.pos[ps[0].id].y + H, cx = L.pos[p.id].x + W / 2, cy = L.pos[p.id].y, my = (ay + cy) / 2;
+    paths += `<path d="M${ax},${ay} V${my} H${cx} V${cy}" fill="none" stroke="#10202c" stroke-width="2"/>`;
+  });
+  data.people.forEach(p => {
+    const s = data.byId[p.spouse]; if (!s || p.id > s.id) return;
+    const a = L.pos[p.id], b = L.pos[s.id], l = a.x < b.x ? a : b, r = a.x < b.x ? b : a;
+    paths += `<path d="M${l.x + W},${l.y + H / 2} H${r.x}" stroke="#10202c" stroke-width="2" stroke-dasharray="5 4"/>`;
+  });
+  svg.innerHTML = paths;
+  data.people.forEach(p => {
+    const c = document.createElement("div"); c.className = "card"; c.dataset.id = p.id;
+    c.style.left = L.pos[p.id].x + "px"; c.style.top = L.pos[p.id].y + "px";
+    c.classList.add(p.gender === "M" ? "male" : p.gender === "F" ? "female" : "unknown");
+    c.innerHTML = `<span class="n"></span><span class="y">${p.birth || ""}</span>`;
+    c.querySelector(".n").textContent = p.name;
+    stage.appendChild(c);
+  });
+  paint();
+}
+
+function paint(){
+  stage.querySelectorAll(".card").forEach(c => {
+    c.classList.toggle("A", c.dataset.id === selA); c.classList.toggle("B", c.dataset.id === selB);
+    c.querySelector(".tag")?.remove();
+    if (c.dataset.id === selA || c.dataset.id === selB){
+      const t = document.createElement("span"); t.className = "tag"; t.textContent = c.dataset.id === selA ? "A" : "B"; c.appendChild(t);
+    }
+  });
+  document.querySelectorAll(".pick button").forEach(b => b.classList.toggle("on", b.dataset.role === role));
+  $("#nameA").textContent = selA && data ? data.byId[selA].name : "Tap a card";
+  $("#nameB").textContent = selB && data ? data.byId[selB].name : "Tap a card";
+  banner();
+}
+
+function banner(){
+  const el = $("#banner");
+  if (!data || !data.people.length) return;
+  if (!selA || !selB){ el.textContent = !selA ? "Tap a card to choose Person A (Me). 请点选“我”。" : "Now tap Person B (the relative). 再点选亲戚。"; return; }
+  const A = data.byId[selA], B = data.byId[selB], esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  if (selA === selB){ el.innerHTML = `<div class="row"><span>${esc(A.name)} calls ${esc(B.name)}:</span><span class="t">自己</span></div>`; return; }
+  const chain = shortestChain(adj, selA, selB);
+  if (!chain){ el.innerHTML = `<span class="err">No family link found between ${esc(A.name)} and ${esc(B.name)}.</span>`; return; }
+  const r = titlesFor(chain, A.gender);
+  if (r.error){ el.innerHTML = `<span class="err">${r.error}</span><div class="chain">${r.text}</div>`; return; }
+  el.innerHTML =
+    `<div class="row"><span>${esc(A.name)} calls ${esc(B.name)}:</span><span class="t">${r.to || "（无标准称呼）"}</span></div>` +
+    `<div class="row"><span>${esc(B.name)} calls ${esc(A.name)}:</span><span class="t">${r.back || "（无标准称呼）"}</span></div>` +
+    `<div class="chain">${r.text}</div>`;
+}
+
+function choose(id){ if (role === "A"){ selA = id; role = "B"; } else selB = id; paint(); }
+document.querySelectorAll(".pick button").forEach(b => b.onclick = () => { role = b.dataset.role; paint(); });
+$("#clear").onclick = () => { selA = selB = null; role = "A"; paint(); };
+
+/* ---------- PAN & ZOOM ---------- */
+function apply(){ stage.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; }
+function zoomAt(cx, cy, f){
+  const k = Math.min(2.5, Math.max(0.3, view.k * f)); f = k / view.k;
+  view.x = cx - (cx - view.x) * f; view.y = cy - (cy - view.y) * f; view.k = k; apply();
+}
+function fit(){
+  if (!L) return;
+  const r = vp.getBoundingClientRect(), pad = 24;
+  view.k = Math.max(0.3, Math.min(1.2, (r.width - pad * 2) / L.totalW, (r.height - pad * 2) / L.totalH));
+  view.x = (r.width - L.totalW * view.k) / 2; view.y = Math.max(pad, (r.height - L.totalH * view.k) / 2); apply();
+}
+const ptrs = new Map(); let moved = 0, lastDist = 0;
+const dist = () => { const [a, b] = [...ptrs.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+vp.addEventListener("pointerdown", e => { ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY}); if (ptrs.size === 1) moved = 0; if (ptrs.size === 2) lastDist = dist(); });
+vp.addEventListener("pointermove", e => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (moved > 6){ vp.classList.add("drag"); try { vp.setPointerCapture(e.pointerId); } catch (_) {} view.x += dx; view.y += dy; apply(); }
+  } else if (ptrs.size === 2){
+    moved = 99;
+    const d = dist(), r = vp.getBoundingClientRect(), [a, b] = [...ptrs.values()];
+    if (lastDist) zoomAt((a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, d / lastDist);
+    lastDist = d;
+  }
+});
+const up = e => { ptrs.delete(e.pointerId); vp.classList.remove("drag"); lastDist = 0; };
+vp.addEventListener("pointerup", up); vp.addEventListener("pointercancel", up);
+vp.addEventListener("wheel", e => { e.preventDefault(); const r = vp.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
+vp.addEventListener("click", e => { if (moved > 6) return; const c = e.target.closest(".card"); if (c) choose(c.dataset.id); });
+const ctr = f => { const r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, f); };
+$("#zin").onclick = () => ctr(1.25); $("#zout").onclick = () => ctr(0.8); $("#zfit").onclick = fit;
+addEventListener("resize", fit);
+
+/* ---------- START ---------- */
+(function start(){
+  banner();
+  if (DEMO) return boot(normalize(MOCK_ROWS));        // renders immediately with mock data
+  const key = localStorage.getItem(KEY_NAME);
+  key ? load(key) : askPass();
+})();
+</script>
+</body>
+</html>

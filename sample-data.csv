@@ -1,0 +1,7 @@
+ID,Name,Gender,Father_ID,Mother_ID,Spouse_ID,Birth_Year,Sibling_Rank
+1,王建国,M,,,2,1940,1
+2,李美华,F,,,1,1943,1
+3,王大伟,M,1,2,4,1968,1
+4,陈丽娟,F,,,3,1970,1
+5,王晓明,M,3,4,,1995,1
+6,王小雨,F,3,4,,1998,2
