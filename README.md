@@ -69,6 +69,6 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/XXXX/exec";
 - The Apps Script URL is visible in the page source. That's fine, since the passcode protects the data.
 - Titles come from `relationship.js`, loaded from jsDelivr. For stability, pin an exact version in the script tag (for example `relationship.js@x.y.z`) after you confirm the version you tested works. If the library fails to load, the banner shows the Chinese relation chain (like 爸爸的哥哥) plus an error.
 - Cousin titles such as `姑表姐`, `姨表哥`, and `舅表弟` are shortened to `表姐`, `表哥`, and `表弟` in the displayed title; the relationship path is still shown underneath.
-- `妻侄女` and `夫侄儿` are shortened to `侄女` and `侄儿`; `姨甥` is shown as `外甥男` or `外甥女` according to the target person's recorded gender.
+- Spouse-side nephew/niece titles such as `妻侄女`, `夫侄儿`, and `妻侄子` are shortened to `侄女` or `侄儿`; `姨甥` is shown as `外甥男` or `外甥女` according to the target person's recorded gender.
 - Titles can differ by region (for example 舅舅 versus 娘舅). The library picks its standard Mandarin title.
 - Very large families (50+ people in one generation) will need zooming out; the layout is one row per generation.
