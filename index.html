@@ -66,7 +66,8 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
   #status{max-width:calc(100% - 72px);font-size:12px}
 }
 @media (orientation:landscape) and (max-height:520px){
-  html,body{height:auto;min-height:100%;overflow:auto}
+  html{height:100%;min-height:100%;overflow-y:auto}
+  body{height:auto;min-height:100%;overflow:visible}
   header{flex:none}
   #viewport{flex:none;height:70vh;height:70dvh;min-height:240px;touch-action:pan-y}
 }
@@ -345,7 +346,34 @@ function simplifyKinshipTitle(title, targetGender){
   if (/^(?:姨|舅|姑)甥(?:儿|子|女)?$/.test(title)) return targetGender === "F" ? "外甥女" : "外甥男";
   const spouseNieceNephew = title.match(/^[妻夫]侄([儿子女])$/);
   if (spouseNieceNephew) return spouseNieceNephew[1] === "女" ? "侄女" : "侄儿";
-  return title.replace(/^(?:姑|姨|舅)(表[哥姐弟妹])$/, "$1");
+  return title
+    .replace(/^(?:姑|姨|舅)(表[哥姐弟妹])$/, "$1")
+    .replace(/^姨([哥姐弟妹])$/, "表$1");
+}
+
+function isSiblingPair(a, b){
+  return (a.father && a.father === b.father) || (a.mother && a.mother === b.mother);
+}
+
+function cousinKindFor(a, b, byId, generations){
+  if (generations[a.id] !== generations[b.id] || isSiblingPair(a, b)) return null;
+  const parentsA = [byId[a.father], byId[a.mother]].filter(Boolean);
+  const parentsB = [byId[b.father], byId[b.mother]].filter(Boolean);
+  for (const pa of parentsA) for (const pb of parentsB){
+    if (pa.id === pb.id) continue;
+    const parentSiblings = (pa.father && pa.father === pb.father) || (pa.mother && pa.mother === pb.mother);
+    if (!parentSiblings) continue;
+    const paternalUncles = pa.id === a.father && pb.id === b.father && pa.gender === "M" && pb.gender === "M";
+    return paternalUncles ? "堂" : "表";
+  }
+  return null;
+}
+
+function ageBasedCousinTitle(caller, target, kind){
+  if (!kind || !caller.birth || !target.birth || caller.birth === target.birth) return null;
+  const older = target.birth < caller.birth;
+  const suffix = target.gender === "F" ? (older ? "姐" : "妹") : (older ? "哥" : "弟");
+  return kind + suffix;
 }
 
 function titlesFor(chain, aGender, bGender){
@@ -457,6 +485,11 @@ function banner(){
   if (!chain){ el.innerHTML = `<span class="err">No family link found between ${esc(A.name)} and ${esc(B.name)}.</span>`; return; }
   const r = titlesFor(chain, A.gender, B.gender);
   if (r.error){ el.innerHTML = `<span class="err">${r.error}</span><div class="chain">${r.text}</div>`; return; }
+  const cousinKind = cousinKindFor(A, B, data.byId, gen);
+  if (cousinKind){
+    r.to = ageBasedCousinTitle(A, B, cousinKind) || r.to;
+    r.back = ageBasedCousinTitle(B, A, cousinKind) || r.back;
+  }
   el.innerHTML =
     `<div class="row"><span>${esc(A.name)} calls ${esc(B.name)}:</span><span class="t">${r.to || "（无标准称呼）"}</span></div>` +
     `<div class="row"><span>${esc(B.name)} calls ${esc(A.name)}:</span><span class="t">${r.back || "（无标准称呼）"}</span></div>` +
@@ -489,6 +522,7 @@ vp.addEventListener("pointermove", e => {
   p.x = e.clientX; p.y = e.clientY;
   if (ptrs.size === 1){
     moved += Math.abs(dx) + Math.abs(dy);
+    if (matchMedia("(orientation:landscape) and (max-height:520px)").matches && Math.abs(dy) > Math.abs(dx)) { moved = 99; return; }
     if (moved > 6){ vp.classList.add("drag"); try { vp.setPointerCapture(e.pointerId); } catch (_) {} view.x += dx; view.y += dy; apply(); }
   } else if (ptrs.size === 2){
     moved = 99;
