@@ -65,6 +65,11 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
   #zoom{right:8px;bottom:8px;gap:7px}#zoom button{width:50px;height:50px}
   #status{max-width:calc(100% - 72px);font-size:12px}
 }
+@media (orientation:landscape) and (max-height:520px){
+  html,body{height:auto;min-height:100%;overflow:auto}
+  header{flex:none}
+  #viewport{flex:none;height:70vh;height:70dvh;min-height:240px;touch-action:pan-y}
+}
 </style>
 </head>
 <body>
