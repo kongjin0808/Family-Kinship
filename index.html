@@ -202,14 +202,20 @@ function layout({people, byId}, gen){
     };
     const families = new Map();
     tiers[g].forEach(p => { const key = familyKey(p); if (!families.has(key)) families.set(key, []); families.get(key).push(p); });
-    const familyCenter = members => {
+    const familyOrder = members => {
+      const first = members[0], parents = [byId[first.father], byId[first.mother]].filter(Boolean);
+      const years = parents.map(p => p.birth).filter(Boolean);
+      if (years.length) return years.reduce((a, b) => a + b, 0) / years.length;
       const centers = members.map(px).filter(x => x !== null);
       return centers.length ? centers.reduce((a, b) => a + b, 0) / centers.length : -1;
     };
-    const sortedFamilies = [...families.entries()].sort((a, b) => familyCenter(a[1]) - familyCenter(b[1]) || a[0].localeCompare(b[0]));
+    const sortedFamilies = [...families.entries()].sort((a, b) => familyOrder(a[1]) - familyOrder(b[1]) || a[0].localeCompare(b[0]));
     const order = [], seen = new Set();
     sortedFamilies.forEach(([, members]) => {
-      const sorted = [...members].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || a.birth - b.birth || a.id.localeCompare(b.id));
+      const sorted = [...members].sort((a, b) => {
+        if (a.birth && b.birth && a.birth !== b.birth) return a.birth - b.birth;
+        return (a.rank ?? 99) - (b.rank ?? 99) || a.birth - b.birth || a.id.localeCompare(b.id);
+      });
       sorted.forEach(p => {
         if (seen.has(p.id)) return;
         const s = byId[p.spouse];
@@ -242,7 +248,40 @@ function layout({people, byId}, gen){
       previousFamily = family;
     });
   });
-  return {pos, totalW, totalH: 62 + (Math.max(...Object.keys(tiers).map(Number)) + 1) * (H + GY) + 24};
+  // Work upward from the youngest generation so each parent unit sits above its children.
+  const generations = Object.keys(tierLayouts).map(Number).sort((a, b) => a - b);
+  for (let gi = generations.length - 2; gi >= 0; gi--) {
+    const g = generations[gi], nextGen = generations[gi + 1], units = [], seen = new Set();
+    tiers[g].forEach(p => {
+      if (seen.has(p.id)) return;
+      const spouse = byId[p.spouse], members = spouse && gen[spouse.id] === g ? [p, spouse] : [p];
+      members.forEach(m => seen.add(m.id));
+      if (members.length === 2) members.sort((a, b) => (a.gender === "M" ? -1 : 1) - (b.gender === "M" ? -1 : 1));
+      const ids = members.map(m => m.id);
+      const children = tiers[nextGen].filter(child => {
+        const parentIds = [child.father, child.mother].filter(Boolean);
+        return ids.length === parentIds.length && ids.every(id => parentIds.includes(id));
+      });
+      units.push({members, children, x: Math.min(...members.map(m => pos[m.id].x))});
+    });
+    units.sort((a, b) => a.x - b.x);
+    let previousRight = -Infinity;
+    units.forEach(unit => {
+      if (!unit.children.length) { previousRight = Math.max(previousRight, ...unit.members.map(m => pos[m.id].x + W)); return; }
+      const childLeft = Math.min(...unit.children.map(c => pos[c.id].x));
+      const childRight = Math.max(...unit.children.map(c => pos[c.id].x + W));
+      const unitWidth = unit.members.length === 2 ? 2 * W + GX : W;
+      const left = Math.max((childLeft + childRight - unitWidth) / 2, previousRight + GX);
+      unit.members.forEach((m, i) => { pos[m.id].x = left + i * (W + GX); });
+      previousRight = left + unitWidth;
+    });
+  }
+  const minX = Math.min(...Object.values(pos).map(p => p.x));
+  const maxX = Math.max(...Object.values(pos).map(p => p.x + W));
+  const shiftX = 20 - minX;
+  Object.values(pos).forEach(p => { p.x += shiftX; });
+  const finalTotalW = maxX - minX + 40;
+  return {pos, totalW: finalTotalW, totalH: 62 + (Math.max(...Object.keys(tiers).map(Number)) + 1) * (H + GY) + 24};
 }
 
 /* ---------- KINSHIP ENGINE ---------- */
