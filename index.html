@@ -353,6 +353,14 @@ function simplifyKinshipTitle(title, targetGender){
     "叔": "叔叔", "叔叔": "叔叔", "叔父": "叔叔"
   };
   if (parentSiblingTitles[plainParentSibling]) return parentSiblingTitles[plainParentSibling];
+  const inLawTitles = {
+    "舅妈": "舅妈", "舅母": "舅妈",
+    "姨丈": "姨丈", "姨夫": "姨丈",
+    "伯母": "伯母",
+    "婶婶": "婶婶", "婶母": "婶婶", "婶": "婶婶",
+    "姑丈": "姑丈", "姑父": "姑丈"
+  };
+  if (inLawTitles[plainParentSibling]) return inLawTitles[plainParentSibling];
   const spouseNieceNephew = title.match(/^[妻夫]侄([儿子女])$/);
   if (spouseNieceNephew) return spouseNieceNephew[1] === "女" ? "侄女" : "侄儿";
   return title

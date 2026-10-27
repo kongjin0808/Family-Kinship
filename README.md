@@ -71,5 +71,6 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/XXXX/exec";
 - Cousin titles such as `姑表姐`, `姨表哥`, and `舅表弟` are shortened to `表姐`, `表哥`, and `表弟` in the displayed title; the relationship path is still shown underneath.
 - Spouse-side nephew/niece titles such as `妻侄女`, `夫侄儿`, and `妻侄子` are shortened to `侄女` or `侄儿`; `姨甥` is shown as `外甥男` or `外甥女` according to the target person's recorded gender.
 - Parent's siblings use the preferred short titles `舅舅`, `阿姨`, `姑姑`, `伯伯`, or `叔叔`, without `大`/`小` age prefixes.
+- Their spouses use `舅妈`, `姨丈`, `伯母`, `婶婶`, or `姑丈`, also without `大`/`小` age prefixes.
 - Titles can differ by region (for example 舅舅 versus 娘舅). The library picks its standard Mandarin title.
 - Very large families (50+ people in one generation) will need zooming out; the layout is one row per generation.
