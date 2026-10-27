@@ -100,7 +100,7 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 <script>
 /* ---------- CONFIG ---------- */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyD2y2MyeEyfJVcwB5MSyh0ktVdWF0nCXgKtN8pm3hPOCM01fDADU7ps_gEdqBfnsW4g/exec";
-const FAMILY_PARAM = new URLSearchParams(location.search).get("family") || "Chong";
+const FAMILY_PARAM = new URLSearchParams(location.search).get("family") || "";
 const FAMILY_CODES = new Set(["chong"]);
 const familyStorageKey = family => `kinship_passkey_${family.trim().toLowerCase()}`;
 const DEMO = APPS_SCRIPT_URL.startsWith("YOUR_");   // placeholder not replaced → demo data
@@ -139,7 +139,7 @@ function normalize(rows){
 /* ---------- AUTH FLOW ---------- */
 const $ = s => document.querySelector(s);
 const gate = $("#gate");
-function askPass(msg = ""){ $("#gmsg").textContent = msg; $("#gfamily").value ||= FAMILY_PARAM; $("#gkey").value = ""; $("#gbtn").disabled = false; gate.classList.add("show"); setTimeout(() => $("#gfamily").focus(), 50); }
+function askPass(msg = ""){ $("#gmsg").textContent = msg; $("#gkey").value = ""; $("#gbtn").disabled = false; gate.classList.add("show"); setTimeout(() => $("#gfamily").focus(), 50); }
 
 async function load(family, key){
   family = family.trim();
@@ -335,15 +335,23 @@ function shortestChain(adj, from, to){
   return null;
 }
 
-function simplifyCousinTitle(title){
-  return typeof title === "string" ? title.replace(/^(?:姑|姨|舅)(表[哥姐弟妹])$/, "$1") : title;
+function simplifyKinshipTitle(title, targetGender){
+  if (typeof title !== "string") return title;
+  if (/^(?:姨|舅|姑)甥(?:儿|子|女)?$/.test(title)) return targetGender === "F" ? "外甥女" : "外甥男";
+  return title
+    .replace(/^(?:姑|姨|舅)(表[哥姐弟妹])$/, "$1")
+    .replace(/^[妻夫](侄[儿女])$/, "$1");
 }
 
-function titlesFor(chain, aGender){
+function titlesFor(chain, aGender, bGender){
   const text = chain.map(t => WORD[t]).join("的"), sex = aGender === "M" ? 1 : 0;
   if (typeof relationship !== "function") return {text, error: "relationship.js did not load (check your connection)."};
   const pick = r => Array.isArray(r) ? r[0] : r;
-  return {text, to: simplifyCousinTitle(pick(relationship({text, sex}))), back: simplifyCousinTitle(pick(relationship({text, sex, reverse: true})))};
+  return {
+    text,
+    to: simplifyKinshipTitle(pick(relationship({text, sex})), bGender),
+    back: simplifyKinshipTitle(pick(relationship({text, sex, reverse: true})), aGender)
+  };
 }
 
 /* ---------- UI ---------- */
@@ -442,7 +450,7 @@ function banner(){
   if (selA === selB){ el.innerHTML = `<div class="row"><span>${esc(A.name)} calls ${esc(B.name)}:</span><span class="t">自己</span></div>`; return; }
   const chain = shortestChain(adj, selA, selB);
   if (!chain){ el.innerHTML = `<span class="err">No family link found between ${esc(A.name)} and ${esc(B.name)}.</span>`; return; }
-  const r = titlesFor(chain, A.gender);
+  const r = titlesFor(chain, A.gender, B.gender);
   if (r.error){ el.innerHTML = `<span class="err">${r.error}</span><div class="chain">${r.text}</div>`; return; }
   el.innerHTML =
     `<div class="row"><span>${esc(A.name)} calls ${esc(B.name)}:</span><span class="t">${r.to || "（无标准称呼）"}</span></div>` +
@@ -495,9 +503,8 @@ addEventListener("resize", fit);
 /* ---------- START ---------- */
 (function start(){
   banner();
-  $("#gfamily").value = FAMILY_PARAM;
   if (DEMO) return boot(normalize(MOCK_ROWS));        // renders immediately with mock data
-  const key = localStorage.getItem(familyStorageKey(FAMILY_PARAM));
+  const key = FAMILY_PARAM ? localStorage.getItem(familyStorageKey(FAMILY_PARAM)) : null;
   key ? load(FAMILY_PARAM, key) : askPass();
 })();
 </script>
