@@ -183,29 +183,60 @@ function computeGenerations({people, byId}){
   return gen;
 }
 
-const W = 220, H = 126, GX = 30, GY = 92;
+const W = 220, H = 126, GX = 30, FAMILY_GAP = 72, GY = 92;
 function layout({people, byId}, gen){
   const tiers = {}; people.forEach(p => (tiers[gen[p.id]] ||= []).push(p));
-  const maxN = Math.max(1, ...Object.values(tiers).map(t => t.length));
-  const totalW = maxN * (W + GX) - GX + 40, pos = {};
+  const pos = {}, tierLayouts = {};
   Object.keys(tiers).map(Number).sort((a, b) => a - b).forEach(g => {
     const px = p => { const xs = [byId[p.father], byId[p.mother]].filter(x => x && pos[x.id]).map(x => pos[x.id].x); return xs.length ? xs.reduce((a, b) => a + b) / xs.length : null; };
-    const keyOf = p => { let k = px(p); if (k === null && p.spouse && byId[p.spouse]) { const s = px(byId[p.spouse]); if (s !== null) k = s + 0.1; } return [k === null ? -1 : k, p.rank ?? 99, p.birth]; };
-    const sorted = [...tiers[g]].sort((a, b) => { const x = keyOf(a), y = keyOf(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; });
+    const familyKey = p => {
+      const member = p.father || p.mother ? p : byId[p.spouse];
+      if (member && (member.father || member.mother)) return `${member.father || ""}|${member.mother || ""}`;
+      return `root:${[p.id, p.spouse].filter(Boolean).sort().join("|")}`;
+    };
+    const families = new Map();
+    tiers[g].forEach(p => { const key = familyKey(p); if (!families.has(key)) families.set(key, []); families.get(key).push(p); });
+    const familyCenter = members => {
+      const centers = members.map(px).filter(x => x !== null);
+      return centers.length ? centers.reduce((a, b) => a + b, 0) / centers.length : -1;
+    };
+    const sortedFamilies = [...families.entries()].sort((a, b) => familyCenter(a[1]) - familyCenter(b[1]) || a[0].localeCompare(b[0]));
     const order = [], seen = new Set();
-    sorted.forEach(p => {
-      if (seen.has(p.id)) return;
-      const s = byId[p.spouse];
-      if (s && gen[s.id] === g) {
-        const pair = p.gender === "F" ? [s, p] : [p, s];
-        pair.forEach(person => { if (!seen.has(person.id)) { seen.add(person.id); order.push(person); } });
-      } else { seen.add(p.id); order.push(p); }
+    sortedFamilies.forEach(([, members]) => {
+      const sorted = [...members].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || a.birth - b.birth || a.id.localeCompare(b.id));
+      sorted.forEach(p => {
+        if (seen.has(p.id)) return;
+        const s = byId[p.spouse];
+        if (s && gen[s.id] === g) {
+          const pair = p.gender === "F" ? [s, p] : [p, s];
+          pair.forEach(person => { if (!seen.has(person.id)) { seen.add(person.id); order.push(person); } });
+        } else { seen.add(p.id); order.push(p); }
+      });
     });
-    const rowW = order.length * (W + GX) - GX;
-    const start = 20 + (totalW - 40 - rowW) / 2;
-    order.forEach((p, i) => pos[p.id] = {x: start + i * (W + GX), y: 62 + g * (H + GY)});
+    let rowW = 0, previousFamily = null;
+    order.forEach((p, i) => {
+      const family = familyKey(p);
+      if (i) rowW += GX + (family !== previousFamily ? FAMILY_GAP : 0);
+      rowW += W;
+      previousFamily = family;
+    });
+    tierLayouts[g] = {order, rowW};
   });
-  return {pos, totalW, totalH: 62 + Object.keys(tiers).length * (H + GY) + 24};
+  const totalW = Math.max(1, ...Object.values(tierLayouts).map(t => t.rowW)) + 40;
+  Object.entries(tierLayouts).forEach(([g, tier]) => {
+    let x = 20 + (totalW - 40 - tier.rowW) / 2, previousFamily = null;
+    tier.order.forEach((p, i) => {
+      const member = p.father || p.mother ? p : byId[p.spouse];
+      const family = member && (member.father || member.mother)
+        ? `${member.father || ""}|${member.mother || ""}`
+        : `root:${[p.id, p.spouse].filter(Boolean).sort().join("|")}`;
+      if (i) x += GX + (family !== previousFamily ? FAMILY_GAP : 0);
+      pos[p.id] = {x, y: 62 + Number(g) * (H + GY)};
+      x += W;
+      previousFamily = family;
+    });
+  });
+  return {pos, totalW, totalH: 62 + (Math.max(...Object.keys(tiers).map(Number)) + 1) * (H + GY) + 24};
 }
 
 /* ---------- KINSHIP ENGINE ---------- */
@@ -367,7 +398,8 @@ function zoomAt(cx, cy, f){
 function fit(){
   if (!L) return;
   const r = vp.getBoundingClientRect(), pad = 24;
-  view.k = Math.max(0.3, Math.min(1.2, (r.width - pad * 2) / L.totalW, (r.height - pad * 2) / L.totalH));
+  // Keep cards readable; let the user pan across wider family generations.
+  view.k = Math.max(0.5, Math.min(1.2, (r.width - pad * 2) / L.totalW, (r.height - pad * 2) / L.totalH));
   view.x = (r.width - L.totalW * view.k) / 2; view.y = Math.max(pad, (r.height - L.totalH * view.k) / 2); apply();
 }
 const ptrs = new Map(); let moved = 0, lastDist = 0;
