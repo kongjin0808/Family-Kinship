@@ -4,23 +4,36 @@
  * Sheet: a tab named "People" with this header row (exact spelling):
  *   ID | Name | Gender | Father_ID | Mother_ID | Spouse_ID | Birth_Year | Sibling_Rank
  *
- * Passcode: Project Settings (gear icon) > Script Properties > add
- *   FAMILY_PASSCODE = your-secret-word
+ * To register another family, add a lowercase family code below and set its
+ * passcode in Script Properties. Keep passcodes out of this source file.
  */
-const SHEET_NAME = "People";
+const FAMILIES = {
+  chong: {
+    spreadsheetId: "", // blank uses the spreadsheet this script is attached to
+    sheetName: "People",
+    passcodeProperty: "FAMILY_PASSCODE"
+  }
+};
 
 function doGet(e) {
+  const familyName = String((e && e.parameter && e.parameter.family) || "Chong").trim();
+  const family = FAMILIES[familyName.toLowerCase()];
+  if (!family) return json_({ status: "error", message: "Unknown family" });
+
   const given = String((e && e.parameter && e.parameter.key) || "").trim();
   const expected = String(
-    PropertiesService.getScriptProperties().getProperty("FAMILY_PASSCODE") || ""
+    PropertiesService.getScriptProperties().getProperty(family.passcodeProperty) || ""
   ).trim();
 
   if (!expected || given !== expected) {
     return json_({ status: "error", message: "Invalid passcode" });
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  if (!sheet) return json_({ status: "error", message: "Sheet not found: " + SHEET_NAME });
+  const spreadsheet = family.spreadsheetId
+    ? SpreadsheetApp.openById(family.spreadsheetId)
+    : SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(family.sheetName);
+  if (!sheet) return json_({ status: "error", message: "Sheet not found: " + family.sheetName });
 
   const values = sheet.getDataRange().getValues();
   const headers = values.shift().map(function (h) { return String(h).trim(); });

@@ -85,8 +85,11 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 
 <div id="gate" role="dialog" aria-modal="true" aria-labelledby="gtitle">
   <form id="gform">
-    <h2 id="gtitle">Enter Family Passcode / 输入家族密码</h2>
-    <p>Ask a family member if you don't know it.</p>
+    <h2 id="gtitle">Family login / 家族登录</h2>
+    <p>Enter the family name and passcode. / 输入家族名称和密码。</p>
+    <label for="gfamily">Family name / 家族名称</label>
+    <input id="gfamily" type="text" autocomplete="username" aria-label="Family name" required>
+    <label for="gkey">Passcode / 密码</label>
     <input id="gkey" type="password" autocomplete="current-password" aria-label="Passcode" required>
     <button id="gbtn" type="submit">Enter / 进入</button>
     <div class="msg" id="gmsg" role="alert"></div>
@@ -97,7 +100,9 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 <script>
 /* ---------- CONFIG ---------- */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyD2y2MyeEyfJVcwB5MSyh0ktVdWF0nCXgKtN8pm3hPOCM01fDADU7ps_gEdqBfnsW4g/exec";
-const KEY_NAME = "kinship_passkey";
+const FAMILY_PARAM = new URLSearchParams(location.search).get("family") || "Chong";
+const FAMILY_CODES = new Set(["chong"]);
+const familyStorageKey = family => `kinship_passkey_${family.trim().toLowerCase()}`;
 const DEMO = APPS_SCRIPT_URL.startsWith("YOUR_");   // placeholder not replaced → demo data
 
 const MOCK_ROWS = [
@@ -134,21 +139,29 @@ function normalize(rows){
 /* ---------- AUTH FLOW ---------- */
 const $ = s => document.querySelector(s);
 const gate = $("#gate");
-function askPass(msg = ""){ $("#gmsg").textContent = msg; $("#gkey").value = ""; $("#gbtn").disabled = false; gate.classList.add("show"); setTimeout(() => $("#gkey").focus(), 50); }
+function askPass(msg = ""){ $("#gmsg").textContent = msg; $("#gfamily").value ||= FAMILY_PARAM; $("#gkey").value = ""; $("#gbtn").disabled = false; gate.classList.add("show"); setTimeout(() => $("#gfamily").focus(), 50); }
 
-async function load(key){
+async function load(family, key){
+  family = family.trim();
+  if (!FAMILY_CODES.has(family.toLowerCase())){
+    setStatus("");
+    askPass("Family not set up yet. / 该家族尚未设置");
+    return;
+  }
+  const storageKey = familyStorageKey(family);
   $("#gbtn").disabled = true; setStatus("Loading… 加载中");
   try {
-    const res = await fetch(`${APPS_SCRIPT_URL}?key=${encodeURIComponent(key)}`);
+    const res = await fetch(`${APPS_SCRIPT_URL}?family=${encodeURIComponent(family)}&key=${encodeURIComponent(key)}`);
     const json = await res.json();
     if (!res.ok || !json || !["ok", "success"].includes(json.status) || !Array.isArray(json.data)){
-      localStorage.removeItem(KEY_NAME);
+      localStorage.removeItem(storageKey);
       askPass(json && json.status === "error"
-        ? "Invalid passcode, please try again. / 密码错误，请重试"
+        ? (json.message === "Unknown family" ? "Family not set up yet. / 该家族尚未设置" : "Invalid family name or passcode. / 家族名称或密码错误")
         : "The server returned an unexpected response. / 服务器返回了异常响应");
       return;
     }
-    localStorage.setItem(KEY_NAME, key);
+    localStorage.setItem(storageKey, key);
+    activeFamily = family;
     gate.classList.remove("show"); setStatus("");
     boot(normalize(json.data));
   } catch (e) {
@@ -158,11 +171,11 @@ async function load(key){
 
 $("#gform").addEventListener("submit", e => {
   e.preventDefault();
-  const key = $("#gkey").value.trim(); if (!key) return;
-  load(key);
+  const family = $("#gfamily").value.trim(), key = $("#gkey").value.trim(); if (!family || !key) return;
+  load(family, key);
 });
 $("#logout").onclick = () => {
-  localStorage.removeItem(KEY_NAME);
+  localStorage.removeItem(familyStorageKey(activeFamily));
   selA = selB = null; role = "A";
   if (DEMO){ paint(); setStatus("Demo data — passcode cleared"); } else askPass();
 };
@@ -322,15 +335,19 @@ function shortestChain(adj, from, to){
   return null;
 }
 
+function simplifyCousinTitle(title){
+  return typeof title === "string" ? title.replace(/^(?:姑|姨|舅)(表[哥姐弟妹])$/, "$1") : title;
+}
+
 function titlesFor(chain, aGender){
   const text = chain.map(t => WORD[t]).join("的"), sex = aGender === "M" ? 1 : 0;
   if (typeof relationship !== "function") return {text, error: "relationship.js did not load (check your connection)."};
   const pick = r => Array.isArray(r) ? r[0] : r;
-  return {text, to: pick(relationship({text, sex})), back: pick(relationship({text, sex, reverse: true}))};
+  return {text, to: simplifyCousinTitle(pick(relationship({text, sex}))), back: simplifyCousinTitle(pick(relationship({text, sex, reverse: true})))};
 }
 
 /* ---------- UI ---------- */
-let data, gen, L, adj, selA = null, selB = null, role = "A";
+let data, gen, L, adj, activeFamily = FAMILY_PARAM, selA = null, selB = null, role = "A";
 const stage = $("#stage"), vp = $("#viewport"), svg = $("#lines");
 let view = {x: 0, y: 0, k: 1};
 function setStatus(t){ $("#status").textContent = t; }
@@ -478,9 +495,10 @@ addEventListener("resize", fit);
 /* ---------- START ---------- */
 (function start(){
   banner();
+  $("#gfamily").value = FAMILY_PARAM;
   if (DEMO) return boot(normalize(MOCK_ROWS));        // renders immediately with mock data
-  const key = localStorage.getItem(KEY_NAME);
-  key ? load(key) : askPass();
+  const key = localStorage.getItem(familyStorageKey(FAMILY_PARAM));
+  key ? load(FAMILY_PARAM, key) : askPass();
 })();
 </script>
 </body>
