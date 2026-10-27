@@ -344,6 +344,15 @@ function shortestChain(adj, from, to){
 function simplifyKinshipTitle(title, targetGender){
   if (typeof title !== "string") return title;
   if (/^(?:姨|舅|姑)甥(?:儿|子|女)?$/.test(title)) return targetGender === "F" ? "外甥女" : "外甥男";
+  const plainParentSibling = title.replace(/^[大小]/, "");
+  const parentSiblingTitles = {
+    "舅": "舅舅", "舅舅": "舅舅", "舅父": "舅舅",
+    "姨": "阿姨", "阿姨": "阿姨", "姨妈": "阿姨", "姨母": "阿姨",
+    "姑": "姑姑", "姑姑": "姑姑", "姑妈": "姑姑", "姑母": "姑姑",
+    "伯": "伯伯", "伯伯": "伯伯", "伯父": "伯伯",
+    "叔": "叔叔", "叔叔": "叔叔", "叔父": "叔叔"
+  };
+  if (parentSiblingTitles[plainParentSibling]) return parentSiblingTitles[plainParentSibling];
   const spouseNieceNephew = title.match(/^[妻夫]侄([儿子女])$/);
   if (spouseNieceNephew) return spouseNieceNephew[1] === "女" ? "侄女" : "侄儿";
   return title
