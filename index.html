@@ -280,7 +280,7 @@ function computeGenerations({people, byId}){
   return gen;
 }
 
-const W = 220, H = 126, GX = 30, FAMILY_GAP = 72, GY = 92;
+const W = 220, H = 126, GX = 28, COUPLE_GAP = 12, FAMILY_GAP = 280, GY = 92;
 function connectorBusY(parentBottom, childTop, lane, laneCount){
   const gap = childTop - parentBottom;
   const inset = Math.min(12, Math.max(4, gap * 0.18));
@@ -307,8 +307,8 @@ function layout({people, byId}, gen){
       return centers.length ? centers.reduce((a, b) => a + b, 0) / centers.length : -1;
     };
     const sortedFamilies = [...families.entries()].sort((a, b) => familyOrder(a[1]) - familyOrder(b[1]) || a[0].localeCompare(b[0]));
-    const order = [], seen = new Set();
-    sortedFamilies.forEach(([, members]) => {
+    const units = [], seen = new Set();
+    sortedFamilies.forEach(([family, members]) => {
       const sorted = [...members].sort((a, b) => {
         if (a.birth && b.birth && a.birth !== b.birth) return a.birth - b.birth;
         return (a.rank ?? 99) - (b.rank ?? 99) || a.birth - b.birth || a.id.localeCompare(b.id);
@@ -318,44 +318,34 @@ function layout({people, byId}, gen){
         const s = byId[p.spouse];
         if (s && gen[s.id] === g) {
           const pair = p.gender === "F" ? [s, p] : [p, s];
-          pair.forEach(person => { if (!seen.has(person.id)) { seen.add(person.id); order.push(person); } });
-        } else { seen.add(p.id); order.push(p); }
+          const members = pair.filter(person => !seen.has(person.id));
+          members.forEach(person => seen.add(person.id));
+          if (members.length) units.push({family, members});
+        } else { seen.add(p.id); units.push({family, members: [p]}); }
       });
     });
     let rowW = 0, previousFamily = null;
-    order.forEach((p, i) => {
-      const family = familyKey(p);
-      if (i) rowW += GX + (family !== previousFamily ? FAMILY_GAP : 0);
-      rowW += W;
-      previousFamily = family;
+    units.forEach((unit, i) => {
+      if (i) rowW += unit.family === previousFamily ? GX : FAMILY_GAP;
+      rowW += unit.members.length * W + Math.max(0, unit.members.length - 1) * COUPLE_GAP;
+      previousFamily = unit.family;
     });
-    tierLayouts[g] = {order, rowW};
+    tierLayouts[g] = {units, rowW};
   });
   const totalW = Math.max(1, ...Object.values(tierLayouts).map(t => t.rowW)) + 40;
   Object.entries(tierLayouts).forEach(([g, tier]) => {
     let x = 20 + (totalW - 40 - tier.rowW) / 2, previousFamily = null;
-    tier.order.forEach((p, i) => {
-      const member = p.father || p.mother ? p : byId[p.spouse];
-      const family = member && (member.father || member.mother)
-        ? `${member.father || ""}|${member.mother || ""}`
-        : `root:${[p.id, p.spouse].filter(Boolean).sort().join("|")}`;
-      if (i) x += GX + (family !== previousFamily ? FAMILY_GAP : 0);
-      pos[p.id] = {x, y: 0};
-      x += W;
-      previousFamily = family;
+    tier.units.forEach((unit, i) => {
+      if (i) x += unit.family === previousFamily ? GX : FAMILY_GAP;
+      unit.members.forEach((p, memberIndex) => {
+        pos[p.id] = {x, y: 0};
+        x += W + (memberIndex < unit.members.length - 1 ? COUPLE_GAP : 0);
+      });
+      previousFamily = unit.family;
     });
   });
-  // Keep sibling households together in age order rather than moving parents
-  // independently to follow descendants; independent moves scatter siblings
-  // across the chart and make their connector buses overlap.
-  Object.values(tierLayouts).forEach(({order}) => {
-    const row = [...order].sort((a, b) => pos[a.id].x - pos[b.id].x || a.id.localeCompare(b.id));
-    let rightEdge = -Infinity;
-    row.forEach(p => {
-      if (pos[p.id].x < rightEdge + GX) pos[p.id].x = rightEdge + GX;
-      rightEdge = pos[p.id].x + W;
-    });
-  });
+  // Each parent family is placed as one block. The generous inter-family gap
+  // makes branches easy to distinguish while keeping spouses adjacent.
   const minX = Math.min(...Object.values(pos).map(p => p.x));
   const maxX = Math.max(...Object.values(pos).map(p => p.x + W));
   const shiftX = 20 - minX;
