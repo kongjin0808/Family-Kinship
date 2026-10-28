@@ -136,6 +136,23 @@ function normalize(rows){
   })).filter(p => p.id && p.name);
   const byId = Object.fromEntries(people.map(p => [p.id, p]));
   people.forEach(p => { if (p.spouse && byId[p.spouse] && !byId[p.spouse].spouse) byId[p.spouse].spouse = p.id; });
+  // Repair a common sheet-entry mistake: a person listed as their own parent.
+  // When the other recorded parent has a spouse, that spouse is the safest
+  // replacement for the self-reference (and keeps the family branch linked).
+  people.forEach(p => {
+    if (p.father === p.id) {
+      p.father = null;
+      const otherParent = byId[p.mother];
+      const inferred = otherParent && byId[otherParent.spouse];
+      if (inferred && inferred.id !== p.id) p.father = inferred.id;
+    }
+    if (p.mother === p.id) {
+      p.mother = null;
+      const otherParent = byId[p.father];
+      const inferred = otherParent && byId[otherParent.spouse];
+      if (inferred && inferred.id !== p.id) p.mother = inferred.id;
+    }
+  });
   people.forEach(p => {
     if (byId[p.father]) byId[p.father].gender ||= "M";
     if (byId[p.mother]) byId[p.mother].gender ||= "F";
@@ -199,16 +216,34 @@ $("#logout").onclick = () => {
 /* ---------- GENERATIONS & LAYOUT ---------- */
 function computeGenerations({people, byId}){
   const gen = {};
-  people.forEach(p => { if (!p.father && !p.mother) gen[p.id] = 0; });
-  for (let n = 0; n < people.length + 2; n++){
-    people.forEach(p => {
-      const ps = [byId[p.father], byId[p.mother]].filter(x => x && gen[x.id] !== undefined);
-      if (ps.length) gen[p.id] = Math.max(...ps.map(x => gen[x.id])) + 1;
-      else if (!p.father && !p.mother && p.spouse && byId[p.spouse] && (byId[p.spouse].father || byId[p.spouse].mother) && gen[p.spouse] !== undefined)
-        gen[p.id] = gen[p.spouse];   // married-in partner sits in the spouse's tier
-    });
+  const visiting = new Set();
+  function generationOf(p){
+    if (gen[p.id] !== undefined) return gen[p.id];
+    // Ignore only the edge that closes a cycle. This prevents corrupt parent
+    // references from creating hundreds of phantom generations.
+    if (visiting.has(p.id)) return null;
+    visiting.add(p.id);
+    const parentGenerations = [byId[p.father], byId[p.mother]]
+      .filter(Boolean)
+      .map(generationOf)
+      .filter(Number.isFinite);
+    visiting.delete(p.id);
+    gen[p.id] = parentGenerations.length ? Math.max(...parentGenerations) + 1 : 0;
+    return gen[p.id];
   }
-  people.forEach(p => { if (gen[p.id] === undefined) gen[p.id] = 0; });
+  people.forEach(generationOf);
+  // A married-in person with no parent records sits beside their spouse.
+  for (let pass = 0; pass < people.length; pass++){
+    let changed = false;
+    people.forEach(p => {
+      const spouse = byId[p.spouse];
+      if (!p.father && !p.mother && spouse && (spouse.father || spouse.mother) && gen[p.id] !== gen[spouse.id]){
+        gen[p.id] = gen[spouse.id];
+        changed = true;
+      }
+    });
+    if (!changed) break;
+  }
   return gen;
 }
 
@@ -305,6 +340,17 @@ function layout({people, byId}, gen){
       previousRight = left + unitWidth;
     });
   }
+  // Parent recentering can move a couple into cards from another branch.
+  // Preserve the established left-to-right order, but guarantee a clear gap
+  // between every card in each generation row.
+  Object.values(tierLayouts).forEach(({order}) => {
+    const row = [...order].sort((a, b) => pos[a.id].x - pos[b.id].x || a.id.localeCompare(b.id));
+    let rightEdge = -Infinity;
+    row.forEach(p => {
+      if (pos[p.id].x < rightEdge + GX) pos[p.id].x = rightEdge + GX;
+      rightEdge = pos[p.id].x + W;
+    });
+  });
   const minX = Math.min(...Object.values(pos).map(p => p.x));
   const maxX = Math.max(...Object.values(pos).map(p => p.x + W));
   const shiftX = 20 - minX;
