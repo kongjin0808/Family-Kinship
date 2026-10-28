@@ -114,7 +114,11 @@ const FAMILY_API_URLS = {
 const FAMILY_DATA_REPAIRS = {
   sio: {
     replaceId: {from: "SIO-P010", to: "SIO-001"},
-    rename: {id: "SIO-001", name: "Sio Chip (苏式习)"}
+    rename: {id: "SIO-001", name: "Sio Chip (苏式习)"},
+    parentFixes: {
+      "SIO-182": {Father_ID: "SIO-179"},
+      "SIO-183": {Father_ID: "SIO-179"}
+    }
   }
 };
 const FAMILY_PARAM = new URLSearchParams(location.search).get("family") || "";
@@ -142,6 +146,8 @@ function normalize(rows, familyCode = ""){
       ["Father_ID", "Mother_ID", "Spouse_ID"].forEach(field => {
         if (sid(row[field]) === repair.replaceId.from) row[field] = repair.replaceId.to;
       });
+      const parentFix = repair.parentFixes && repair.parentFixes[sid(row.ID)];
+      if (parentFix) Object.assign(row, parentFix);
       if (sid(row.ID) === repair.rename.id) row.Name = repair.rename.name;
     }
     return row;
