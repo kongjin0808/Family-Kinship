@@ -320,12 +320,28 @@ async function layout({people, byId}){
       ? `root:${[p.id, spouse.id].sort().join("|")}`
       : `root:${p.id}`;
   };
-  const orderedPeople = [...people].sort((a, b) => {
-    const familyOrder = familyKey(a).localeCompare(familyKey(b));
-    if (familyOrder) return familyOrder;
-    if (a.birth && b.birth && a.birth !== b.birth) return a.birth - b.birth;
-    return (a.rank ?? 99) - (b.rank ?? 99) || a.id.localeCompare(b.id);
+  const familyGroups = new Map();
+  people.forEach(p => {
+    const key = familyKey(p);
+    if (!familyGroups.has(key)) familyGroups.set(key, []);
+    familyGroups.get(key).push(p);
   });
+  const orderedPeople = [], orderedIds = new Set();
+  const addInOrder = p => { if (p && !orderedIds.has(p.id)) { orderedIds.add(p.id); orderedPeople.push(p); } };
+  [...familyGroups.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([, members]) => {
+    members.sort((a, b) => {
+      if (a.birth && b.birth && a.birth !== b.birth) return a.birth - b.birth;
+      return (a.rank ?? 99) - (b.rank ?? 99) || a.id.localeCompare(b.id);
+    }).forEach(p => {
+      addInOrder(p);
+      const spouse = byId[p.spouse];
+      // Keep a married-in person without their own parent record beside their
+      // sibling, while leaving spouses with recorded parents in their own
+      // birth-family order.
+      if (spouse && !spouse.father && !spouse.mother) addInOrder(spouse);
+    });
+  });
+  people.forEach(addInOrder);
   const children = orderedPeople.map(p => ({id: p.id, width: W, height: H}));
   unions.forEach(union => {
     const id = `union_${index++}`;
@@ -605,7 +621,7 @@ function render(){
   const spousePairs = viewPeople.filter(p => p.spouse && visibleIds.has(p.spouse) && p.id < p.spouse);
   const rows = new Map();
   viewPeople.forEach(p => { const y = Math.round(L.pos[p.id].y); rows.set(y, (rows.get(y) || 0) + 1); });
-  window.__treeAudit = {
+  const audit = {
     cards: viewPeople.length,
     connectorPaths: svg.querySelectorAll("path").length,
     expectedChildLinks: expectedChildren.length,
@@ -616,6 +632,8 @@ function render(){
     missingSpouseLinks: spousePairs.filter(p => !renderedSpouses.has(`${p.id}|${p.spouse}`)).length,
     rowCounts: [...rows.values()].sort((a, b) => a - b)
   };
+  window.__treeAudit = audit;
+  svg.setAttribute("data-audit", JSON.stringify(audit));
 }
 
 function paint(){
