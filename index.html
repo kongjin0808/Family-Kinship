@@ -348,16 +348,16 @@ async function layout({people, byId}){
     }).forEach(p => {
       addInOrder(p);
       const spouse = byId[p.spouse];
-      // Keep a married-in person without their own parent record beside their
-      // sibling, while leaving spouses with recorded parents in their own
-      // birth-family order.
-      if (spouse && !spouse.father && !spouse.mother) addInOrder(spouse);
       // Do the same for a co-parent identified by a child's Father_ID and
       // Mother_ID when the sheet does not also have a Spouse_ID link.
       [...(coParents.get(p.id) || [])].sort().forEach(id => {
         const partner = byId[id];
         if (partner && !partner.father && !partner.mother) addInOrder(partner);
       });
+      // Treat each couple as a unit in this row. The sibling records themselves
+      // remain ordered by birth year; a spouse is kept next to their partner
+      // even when that spouse also has their own parents in the sheet.
+      if (spouse) addInOrder(spouse);
     });
   });
   people.forEach(addInOrder);
