@@ -109,6 +109,14 @@ const FAMILY_API_URLS = {
   chong: "https://script.google.com/macros/s/AKfycbzyD2y2MyeEyfJVcwB5MSyh0ktVdWF0nCXgKtN8pm3hPOCM01fDADU7ps_gEdqBfnsW4g/exec",
   sio: "https://script.google.com/macros/s/AKfycbzB9vNol-nr50K8VETwJ9cM--7r0458sjVLHwSjcLNc3tQV2AdXcwwUwPepPz-WvKwk/exec"
 };
+// Sio's source sheet uses a placeholder for the same ancestor identified by
+// the family as Sio Chip / 苏式习. Merge that placeholder into the real card.
+const FAMILY_DATA_REPAIRS = {
+  sio: {
+    replaceId: {from: "SIO-P010", to: "SIO-001"},
+    rename: {id: "SIO-001", name: "Sio Chip (苏式习)"}
+  }
+};
 const FAMILY_PARAM = new URLSearchParams(location.search).get("family") || "";
 const FAMILY_CODES = new Set(Object.keys(FAMILY_API_URLS));
 const familyStorageKey = family => `kinship_passkey_${family.trim().toLowerCase()}`;
@@ -126,8 +134,19 @@ const MOCK_ROWS = [
 /* ---------- DATA ---------- */
 const sid = v => (v === undefined || v === null || String(v).trim() === "") ? null : String(v).trim();
 
-function normalize(rows){
-  const people = rows.map(r => ({
+function normalize(rows, familyCode = ""){
+  const repair = FAMILY_DATA_REPAIRS[familyCode];
+  const sourceRows = rows.map(r => {
+    const row = {...r};
+    if (repair) {
+      ["Father_ID", "Mother_ID", "Spouse_ID"].forEach(field => {
+        if (sid(row[field]) === repair.replaceId.from) row[field] = repair.replaceId.to;
+      });
+      if (sid(row.ID) === repair.rename.id) row.Name = repair.rename.name;
+    }
+    return row;
+  }).filter(row => !repair || sid(row.ID) !== repair.replaceId.from);
+  const people = sourceRows.map(r => ({
     id: sid(r.ID), name: sid(r.Name),
     gender: /^(f|female|女)/i.test(sid(r.Gender)||"") ? "F" : /^(m|male|男)/i.test(sid(r.Gender)||"") ? "M" : null,
     father: sid(r.Father_ID), mother: sid(r.Mother_ID), spouse: sid(r.Spouse_ID),
@@ -196,7 +215,7 @@ async function load(family, key){
     localStorage.setItem(storageKey, key);
     activeFamily = family;
     gate.classList.remove("show"); setStatus("");
-    boot(normalize(json.data));
+    boot(normalize(json.data, familyCode));
   } catch (e) {
     askPass("Cannot reach the server. Check your connection and try again. / 无法连接服务器");
   }
@@ -248,11 +267,11 @@ function computeGenerations({people, byId}){
 }
 
 const W = 220, H = 126, GX = 30, FAMILY_GAP = 72, GY = 92;
-function connectorBusY(parentBottom, childTop, groupIndex){
+function connectorBusY(parentBottom, childTop, lane, laneCount){
   const gap = childTop - parentBottom;
-  const laneLimit = Math.min(18, Math.max(0, gap / 4));
-  const lane = [-18, -6, 6, 18][groupIndex % 4] / 18 * laneLimit;
-  return parentBottom + gap / 2 + lane;
+  const inset = Math.min(12, Math.max(4, gap * 0.18));
+  const span = Math.max(1, gap - inset * 2);
+  return parentBottom + inset + span * (lane + 1) / (laneCount + 1);
 }
 function layout({people, byId}, gen){
   const tiers = {}; people.forEach(p => (tiers[gen[p.id]] ||= []).push(p));
@@ -307,42 +326,14 @@ function layout({people, byId}, gen){
         ? `${member.father || ""}|${member.mother || ""}`
         : `root:${[p.id, p.spouse].filter(Boolean).sort().join("|")}`;
       if (i) x += GX + (family !== previousFamily ? FAMILY_GAP : 0);
-      pos[p.id] = {x, y: 62 + Number(g) * (H + GY)};
+      pos[p.id] = {x, y: 0};
       x += W;
       previousFamily = family;
     });
   });
-  // Work upward from the youngest generation so each parent unit sits above its children.
-  const generations = Object.keys(tierLayouts).map(Number).sort((a, b) => a - b);
-  for (let gi = generations.length - 2; gi >= 0; gi--) {
-    const g = generations[gi], nextGen = generations[gi + 1], units = [], seen = new Set();
-    tiers[g].forEach(p => {
-      if (seen.has(p.id)) return;
-      const spouse = byId[p.spouse], members = spouse && gen[spouse.id] === g ? [p, spouse] : [p];
-      members.forEach(m => seen.add(m.id));
-      if (members.length === 2) members.sort((a, b) => (a.gender === "M" ? -1 : 1) - (b.gender === "M" ? -1 : 1));
-      const ids = members.map(m => m.id);
-      const children = tiers[nextGen].filter(child => {
-        const parentIds = [child.father, child.mother].filter(Boolean);
-        return ids.length === parentIds.length && ids.every(id => parentIds.includes(id));
-      });
-      units.push({members, children, x: Math.min(...members.map(m => pos[m.id].x))});
-    });
-    units.sort((a, b) => a.x - b.x);
-    let previousRight = -Infinity;
-    units.forEach(unit => {
-      if (!unit.children.length) { previousRight = Math.max(previousRight, ...unit.members.map(m => pos[m.id].x + W)); return; }
-      const childLeft = Math.min(...unit.children.map(c => pos[c.id].x));
-      const childRight = Math.max(...unit.children.map(c => pos[c.id].x + W));
-      const unitWidth = unit.members.length === 2 ? 2 * W + GX : W;
-      const left = Math.max((childLeft + childRight - unitWidth) / 2, previousRight + GX);
-      unit.members.forEach((m, i) => { pos[m.id].x = left + i * (W + GX); });
-      previousRight = left + unitWidth;
-    });
-  }
-  // Parent recentering can move a couple into cards from another branch.
-  // Preserve the established left-to-right order, but guarantee a clear gap
-  // between every card in each generation row.
+  // Keep sibling households together in age order rather than moving parents
+  // independently to follow descendants; independent moves scatter siblings
+  // across the chart and make their connector buses overlap.
   Object.values(tierLayouts).forEach(({order}) => {
     const row = [...order].sort((a, b) => pos[a.id].x - pos[b.id].x || a.id.localeCompare(b.id));
     let rightEdge = -Infinity;
@@ -355,8 +346,52 @@ function layout({people, byId}, gen){
   const maxX = Math.max(...Object.values(pos).map(p => p.x + W));
   const shiftX = 20 - minX;
   Object.values(pos).forEach(p => { p.x += shiftX; });
+  // Give each connector lane enough vertical breathing room. This expands only
+  // the generation gaps that actually contain overlapping branch routes.
+  const branchGroups = new Map();
+  people.forEach(child => {
+    if (!child.father && !child.mother) return;
+    const key = `${child.father || ""}|${child.mother || ""}`;
+    if (!branchGroups.has(key)) branchGroups.set(key, []);
+    branchGroups.get(key).push(child);
+  });
+  const intervalsByChildGen = new Map();
+  branchGroups.forEach(children => {
+    const child = children[0], father = byId[child.father], mother = byId[child.mother];
+    const parentA = father || mother, parentB = father && mother;
+    const posA = pos[parentA.id], posB = parentB && pos[parentB.id];
+    const centers = children.map(p => pos[p.id].x + W / 2).sort((a, b) => a - b);
+    const linked = parentB && (parentA.spouse === parentB.id || parentB.spouse === parentA.id);
+    const coupleLeft = linked && (posA.x <= posB.x ? posA : posB);
+    const coupleRight = linked && (posA.x <= posB.x ? posB : posA);
+    const startX = linked ? (coupleLeft.x + W + coupleRight.x) / 2
+      : posB ? (posA.x + posB.x + W) / 2 : posA.x + W / 2;
+    const childGen = gen[child.id];
+    if (!intervalsByChildGen.has(childGen)) intervalsByChildGen.set(childGen, []);
+    intervalsByChildGen.get(childGen).push({left: Math.min(startX, centers[0]), right: Math.max(startX, centers.at(-1))});
+  });
+  const lanesByChildGen = {};
+  intervalsByChildGen.forEach((intervals, childGen) => {
+    const laneEnds = [];
+    intervals.sort((a, b) => a.left - b.left || a.right - b.right).forEach(interval => {
+      let lane = laneEnds.findIndex(right => right <= interval.left);
+      if (lane < 0) lane = laneEnds.length;
+      laneEnds[lane] = interval.right;
+    });
+    lanesByChildGen[childGen] = laneEnds.length;
+  });
+  let y = 62;
+  const maxGeneration = Math.max(...Object.keys(tiers).map(Number));
+  for (let g = 0; g <= maxGeneration; g++) {
+    (tiers[g] || []).forEach(p => { pos[p.id].y = y; });
+    if (g < maxGeneration) {
+      const laneCount = lanesByChildGen[g + 1] || 1;
+      const requiredGap = 24 + (laneCount + 1) * 9;
+      y += H + Math.max(GY, requiredGap);
+    }
+  }
   const finalTotalW = maxX - minX + 40;
-  return {pos, totalW: finalTotalW, totalH: 62 + (Math.max(...Object.keys(tiers).map(Number)) + 1) * (H + GY) + 24};
+  return {pos, totalW: finalTotalW, totalH: y + H + 24};
 }
 
 /* ---------- KINSHIP ENGINE ---------- */
@@ -489,7 +524,7 @@ function render(){
   const siblingGroupList = [...siblingGroups.values()].sort((a, b) =>
     Math.min(...a.map(p => L.pos[p.id].x)) - Math.min(...b.map(p => L.pos[p.id].x))
   );
-  siblingGroupList.forEach((children, groupIndex) => {
+  const branches = siblingGroupList.map(children => {
     const sample = children[0];
     const father = data.byId[sample.father], mother = data.byId[sample.mother];
     const parentA = father || mother, parentB = father && mother;
@@ -497,7 +532,6 @@ function render(){
     const childTop = Math.min(...children.map(p => L.pos[p.id].y));
     const childCenters = children.map(p => L.pos[p.id].x + W / 2).sort((a, b) => a - b);
     const parentBottom = Math.max(posA.y + H, posB ? posB.y + H : 0);
-    const busY = connectorBusY(parentBottom, childTop, groupIndex);
     const linkedCouple = parentB && (parentA.spouse === parentB.id || parentB.spouse === parentA.id);
     const coupleLeft = linkedCouple && (posA.x <= posB.x ? posA : posB);
     const coupleRight = linkedCouple && (posA.x <= posB.x ? posB : posA);
@@ -505,6 +539,28 @@ function render(){
       ? (coupleLeft.x + W + coupleRight.x) / 2
       : posB ? (posA.x + posB.x + W) / 2 : posA.x + W / 2;
     const startY = linkedCouple ? coupleLeft.y + H / 2 : parentBottom;
+    return {children, childTop, childCenters, parentBottom, startX, startY,
+      left: Math.min(startX, childCenters[0]), right: Math.max(startX, childCenters[childCenters.length - 1])};
+  });
+  // Allocate separate connector lanes only where branch spans overlap. Families
+  // on different parts of a generation row can share a lane without merging.
+  const byChildRow = new Map();
+  branches.forEach(branch => {
+    if (!byChildRow.has(branch.childTop)) byChildRow.set(branch.childTop, []);
+    byChildRow.get(branch.childTop).push(branch);
+  });
+  byChildRow.forEach(row => {
+    const laneEnds = [];
+    [...row].sort((a, b) => a.left - b.left || a.right - b.right).forEach(branch => {
+      let lane = laneEnds.findIndex(right => right <= branch.left);
+      if (lane < 0) lane = laneEnds.length;
+      laneEnds[lane] = branch.right;
+      branch.lane = lane;
+    });
+    row.forEach(branch => { branch.laneCount = laneEnds.length; });
+  });
+  branches.forEach(({children, childTop, childCenters, parentBottom, startX, startY, lane, laneCount}) => {
+    const busY = connectorBusY(parentBottom, childTop, lane, laneCount);
     let d = `M${startX},${startY} V${busY}`;
     if (childCenters.length === 1) {
       if (childCenters[0] !== startX) d += ` H${childCenters[0]}`;
