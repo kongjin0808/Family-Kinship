@@ -280,7 +280,7 @@ function computeGenerations({people, byId}){
   return gen;
 }
 
-const W = 220, H = 126, GX = 28, COUPLE_GAP = 12, FAMILY_GAP = 280, GY = 92;
+const W = 220, H = 126, GX = 28, COUPLE_GAP = 12, SIBLING_GAP = 34, FAMILY_GAP = 320, GY = 92;
 function connectorBusY(parentBottom, childTop, lane, laneCount){
   const gap = childTop - parentBottom;
   const inset = Math.min(12, Math.max(4, gap * 0.18));
@@ -291,43 +291,39 @@ function layout({people, byId}, gen){
   const tiers = {}; people.forEach(p => (tiers[gen[p.id]] ||= []).push(p));
   const pos = {}, tierLayouts = {};
   Object.keys(tiers).map(Number).sort((a, b) => a - b).forEach(g => {
-    const px = p => { const xs = [byId[p.father], byId[p.mother]].filter(x => x && pos[x.id]).map(x => pos[x.id].x); return xs.length ? xs.reduce((a, b) => a + b) / xs.length : null; };
+    const parentCenter = p => {
+      const parents = [byId[p.father], byId[p.mother]].filter(x => x && pos[x.id]);
+      return parents.length ? parents.reduce((sum, parent) => sum + pos[parent.id].x + W / 2, 0) / parents.length : null;
+    };
     const familyKey = p => {
-      const member = p.father || p.mother ? p : byId[p.spouse];
-      if (member && (member.father || member.mother)) return `${member.father || ""}|${member.mother || ""}`;
-      return `root:${[p.id, p.spouse].filter(Boolean).sort().join("|")}`;
+      if (p.father || p.mother) return `${p.father || ""}|${p.mother || ""}`;
+      const spouse = byId[p.spouse];
+      if (spouse && !spouse.father && !spouse.mother) return `root:${[p.id, spouse.id].sort().join("|")}`;
+      return `root:${p.id}`;
     };
     const families = new Map();
     tiers[g].forEach(p => { const key = familyKey(p); if (!families.has(key)) families.set(key, []); families.get(key).push(p); });
     const familyOrder = members => {
-      const first = members[0], parents = [byId[first.father], byId[first.mother]].filter(Boolean);
-      const years = parents.map(p => p.birth).filter(Boolean);
-      if (years.length) return years.reduce((a, b) => a + b, 0) / years.length;
-      const centers = members.map(px).filter(x => x !== null);
-      return centers.length ? centers.reduce((a, b) => a + b, 0) / centers.length : -1;
+      const centers = members.map(parentCenter).filter(x => x !== null);
+      if (centers.length) return centers.reduce((a, b) => a + b, 0) / centers.length;
+      const years = members.map(p => p.birth).filter(Boolean);
+      return years.length ? Math.min(...years) : -1;
     };
     const sortedFamilies = [...families.entries()].sort((a, b) => familyOrder(a[1]) - familyOrder(b[1]) || a[0].localeCompare(b[0]));
-    const units = [], seen = new Set();
+    const units = [];
     sortedFamilies.forEach(([family, members]) => {
       const sorted = [...members].sort((a, b) => {
         if (a.birth && b.birth && a.birth !== b.birth) return a.birth - b.birth;
         return (a.rank ?? 99) - (b.rank ?? 99) || a.birth - b.birth || a.id.localeCompare(b.id);
       });
-      sorted.forEach(p => {
-        if (seen.has(p.id)) return;
-        const s = byId[p.spouse];
-        if (s && gen[s.id] === g) {
-          const pair = p.gender === "F" ? [s, p] : [p, s];
-          const members = pair.filter(person => !seen.has(person.id));
-          members.forEach(person => seen.add(person.id));
-          if (members.length) units.push({family, members});
-        } else { seen.add(p.id); units.push({family, members: [p]}); }
-      });
+      // Sibling sets stay contiguous. Pulling spouses beside individual
+      // siblings fragmented these blocks and made the connector buses cross.
+      units.push({family, members: sorted});
     });
     let rowW = 0, previousFamily = null;
     units.forEach((unit, i) => {
       if (i) rowW += unit.family === previousFamily ? GX : FAMILY_GAP;
-      rowW += unit.members.length * W + Math.max(0, unit.members.length - 1) * COUPLE_GAP;
+      rowW += unit.members.length * W + Math.max(0, unit.members.length - 1) * SIBLING_GAP;
       previousFamily = unit.family;
     });
     tierLayouts[g] = {units, rowW};
@@ -339,7 +335,7 @@ function layout({people, byId}, gen){
       if (i) x += unit.family === previousFamily ? GX : FAMILY_GAP;
       unit.members.forEach((p, memberIndex) => {
         pos[p.id] = {x, y: 0};
-        x += W + (memberIndex < unit.members.length - 1 ? COUPLE_GAP : 0);
+        x += W + (memberIndex < unit.members.length - 1 ? SIBLING_GAP : 0);
       });
       previousFamily = unit.family;
     });
