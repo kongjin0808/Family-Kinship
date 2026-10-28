@@ -9,12 +9,12 @@
  */
 const FAMILIES = {
   chong: {
-    spreadsheetId: "", // blank uses the spreadsheet this script is attached to
+    spreadsheetId: "1QCMJeN6OLV9NoFIrbK5mqczsBRO_pFjh1VmQZs5NVY8",
     sheetName: "People",
     passcodeProperty: "FAMILY_PASSCODE"
   },
   sio: {
-    spreadsheetId: "1OhdkGVzFfRDG6aUs7sWGXkQrVqSUfvGHDXVAQR_El6A",
+    spreadsheetId: "1OgYMWKipHJGPHGEB7FsSnTmPgVxAT0e-7ObIhC9FFto",
     sheetName: "People",
     passcodeProperty: "SIO_FAMILY_PASSCODE"
   }

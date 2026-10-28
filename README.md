@@ -28,7 +28,7 @@ Rules for the data:
 
 1. In the Sheet: **Extensions > Apps Script**.
 2. Delete the default code, paste in `Code.gs`, and save.
-3. The current `Code.gs` family registry has `chong` configured to use the spreadsheet the script is attached to. Click the gear icon (**Project Settings**) > **Script Properties** and set:
+3. The `Code.gs` family registry points each family to its own spreadsheet ID, so the Apps Script project may be attached to either family sheet. Click the gear icon (**Project Settings**) > **Script Properties** and set the passcode property for each family:
    - Property: `FAMILY_PASSCODE`
    - Value: the passcode your family will type (for example `jiating2026`)
 4. **Deploy > New deployment** > type **Web app**:
@@ -37,7 +37,7 @@ Rules for the data:
 5. Authorize when asked, then copy the **Web app URL** (ends with `/exec`).
 6. Test it: open `YOUR_URL?family=Chong&key=YOUR_PASSCODE` in a browser. A successful response should contain `data` as an array. A wrong family or passcode returns `{"status":"error",...}`.
 
-The Sio family is configured as `sio` and uses the spreadsheet ID supplied by the family manager. Its data tab must be named `People`, with the same eight headers. In **Script Properties**, add `SIO_FAMILY_PASSCODE` with the family's chosen passcode. The passcode is not stored in this repository. Then deploy a new Apps Script version and publish the updated site. The Sio family link is `https://kongjin0808.github.io/Family-Kinship/?family=Sio`.
+The Sio family is configured as `sio` and points to its own spreadsheet ID. Its data tab must be named `People`, with the same eight headers. In **Script Properties**, add `SIO_FAMILY_PASSCODE` with the family's chosen passcode. The passcode is not stored in this repository. Then deploy a new Apps Script version and publish the updated site. The Sio family link is `https://kongjin0808.github.io/Family-Kinship/?family=Sio`.
 
 For the supplied Sio workbook, import the private `Sio-People-import.csv` file into the Sio spreadsheet as a tab named `People`. It contains 288 named workbook records plus 15 clearly labeled placeholders for people explicitly named as parents but missing full records. Keep both `苏峇璽` records; their English names distinguish them. The CSV is ignored by Git and is not part of the public site repository. The import uses `English name (中文名)` for display, with Chinese-only names where no English name was supplied.
 
