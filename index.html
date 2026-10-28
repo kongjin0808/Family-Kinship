@@ -331,11 +331,12 @@ async function layout({people, byId}){
     children,
     edges
   });
-  const pos = {};
+  const pos = {}, unionPos = {};
   graph.children.forEach(node => {
     if (byId[node.id]) pos[node.id] = {x: node.x + 24, y: node.y + 32};
+    else if (unionNodes.has(node.id)) unionPos[node.id] = {x: node.x + 24, y: node.y + 32};
   });
-  return {pos, edges: graph.edges, totalW: graph.width + 48, totalH: graph.height + 64, unionNodes};
+  return {pos, unionPos, totalW: graph.width + 48, totalH: graph.height + 64, unionNodes};
 }
 
 /* ---------- KINSHIP ENGINE ---------- */
@@ -459,12 +460,27 @@ function render(){
   stage.style.width = L.totalW + "px"; stage.style.height = L.totalH + "px";
   svg.setAttribute("width", L.totalW); svg.setAttribute("height", L.totalH);
   let paths = "";
-  L.edges.forEach(edge => {
-    (edge.sections || []).forEach(section => {
-      const points = [section.startPoint, ...(section.bendPoints || []), section.endPoint];
-      const d = points.map((point, i) => `${i ? "L" : "M"}${point.x + 24},${point.y + 32}`).join(" ");
-      paths += `<path d="${d}" fill="none" stroke="#314252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-    });
+  L.unionNodes.forEach(union => {
+    if (!union.children.length) return;
+    const anchor = L.unionPos[union.nodeId];
+    const parents = union.members.map(id => ({id, p: L.pos[id]})).filter(x => x.p);
+    const children = union.children.map(person => ({person, p: L.pos[person.id]})).filter(x => x.p);
+    if (!anchor || !parents.length || !children.length) return;
+    const parentBottom = Math.max(...parents.map(x => x.p.y + H));
+    const childTop = Math.min(...children.map(x => x.p.y));
+    const busY = Math.max(parentBottom + 12, Math.min(anchor.y + 5, childTop - 12));
+    const startX = parents.reduce((sum, x) => sum + x.p.x + W / 2, 0) / parents.length;
+    const startY = parents.length > 1 ? Math.min(...parents.map(x => x.p.y)) + H / 2 : parentBottom;
+    const centers = children.map(x => x.p.x + W / 2).sort((a, b) => a - b);
+    let d = `M${startX},${startY} V${busY}`;
+    if (centers.length === 1) {
+      if (centers[0] !== startX) d += ` H${centers[0]}`;
+      d += ` V${childTop}`;
+    } else {
+      d += ` M${centers[0]},${busY} H${centers[centers.length - 1]}`;
+      centers.forEach(cx => { d += ` M${cx},${busY} V${childTop}`; });
+    }
+    paths += `<path d="${d}" fill="none" stroke="#314252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   });
   data.people.forEach(p => {
     const s = data.byId[p.spouse]; if (!s || p.id > s.id) return;
