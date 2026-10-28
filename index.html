@@ -310,6 +310,19 @@ async function layout({people, byId}){
     if (spouse && p.id < spouse.id) addUnion([p.id, spouse.id]);
   });
 
+  // Parent pairs from child records can be real couples even when the sheet
+  // has no Spouse_ID for them (especially placeholder parents). Keep those
+  // partners together in the node order so their shared child stem starts in
+  // the gap between the two cards instead of passing through another family.
+  const coParents = new Map();
+  unions.forEach(union => {
+    if (!union.children.length || union.members.length < 2) return;
+    union.members.forEach(id => {
+      if (!coParents.has(id)) coParents.set(id, new Set());
+      union.members.forEach(otherId => { if (otherId !== id) coParents.get(id).add(otherId); });
+    });
+  });
+
   const unionNodes = new Map();
   let index = 0;
   const familyKey = p => {
@@ -339,6 +352,12 @@ async function layout({people, byId}){
       // sibling, while leaving spouses with recorded parents in their own
       // birth-family order.
       if (spouse && !spouse.father && !spouse.mother) addInOrder(spouse);
+      // Do the same for a co-parent identified by a child's Father_ID and
+      // Mother_ID when the sheet does not also have a Spouse_ID link.
+      [...(coParents.get(p.id) || [])].sort().forEach(id => {
+        const partner = byId[id];
+        if (partner && !partner.father && !partner.mother) addInOrder(partner);
+      });
     });
   });
   people.forEach(addInOrder);
