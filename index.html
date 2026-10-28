@@ -435,10 +435,38 @@ async function layout({people, byId}){
   const rowGap = 74;
   const rowWidth = row => row.length * W + Math.max(0, row.length - 1) * rowGap;
   const maxRowWidth = Math.max(0, ...[...rows.values()].map(rowWidth));
-  rows.forEach(row => {
-    row.sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity));
+  const birthFamilyKey = p => {
+    const parents = [p.father, p.mother].filter(Boolean).sort();
+    if (parents.length) return `parents:${parents.join("|")}`;
+    const spouse = byId[p.spouse];
+    if (spouse) {
+      const spouseParents = [spouse.father, spouse.mother].filter(Boolean).sort();
+      if (spouseParents.length) return `parents:${spouseParents.join("|")}`;
+    }
+    return `root:${p.id}`;
+  };
+  [...rows.entries()].sort((a, b) => a[0] - b[0]).forEach(([, row]) => {
+    // Sort family branches below the parents' current positions, then keep
+    // each sibling group in birth order (including spouses alongside them).
+    const groups = new Map();
+    row.forEach(p => {
+      const key = birthFamilyKey(p);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    const groupAnchorX = members => {
+      const child = members.find(p => p.father || p.mother);
+      if (child) {
+        const parents = [byId[child.father], byId[child.mother]].filter(p => p && pos[p.id]);
+        if (parents.length) return parents.reduce((sum, p) => sum + pos[p.id].x + W / 2, 0) / parents.length;
+      }
+      return Math.min(...members.map(p => pos[p.id].x));
+    };
+    const orderedRow = [...groups.values()]
+      .sort((a, b) => groupAnchorX(a) - groupAnchorX(b))
+      .flatMap(members => members.sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity)));
     const startX = 24 + (maxRowWidth - rowWidth(row)) / 2;
-    row.forEach((p, i) => { pos[p.id].x = startX + i * (W + rowGap); });
+    orderedRow.forEach((p, i) => { pos[p.id].x = startX + i * (W + rowGap); });
   });
   people.forEach(p => {
     const spouse = byId[p.spouse];
