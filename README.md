@@ -19,9 +19,11 @@ The app asks for a family name and passcode. `FAMILY_API_URLS` maps each family 
 
 Rules for the data:
 - `ID` is any unique value (1, 2, 3 ...). `Father_ID`, `Mother_ID`, `Spouse_ID` point to another row's `ID`. Leave blank if unknown.
+- `Father_ID` and `Mother_ID` are the parent-child relationships the tree should draw. Enter biological or adoptive parents here as appropriate; a current step-parent belongs in `Spouse_ID`, not in the child's parent fields unless they are also a parent.
+- `Spouse_ID` represents the partner to show with a dotted couple line. It does not store divorce history or multiple former spouses.
 - `Gender` is `M` or `F`. It decides 儿子/女儿, 哥哥/姐姐 and so on, so fill it for everyone.
 - `Sibling_Rank`: 1 = eldest among full siblings. If blank, `Birth_Year` is used to decide older or younger.
-- People who marry in (no parents listed) are placed in their spouse's generation row automatically.
+- People who marry in are placed beside their spouse. Descendant branches are packed beneath their recorded parents, and siblings are ordered by birth year (or `Sibling_Rank` when years are missing).
 - Siblings are detected when two people share a Father_ID or Mother_ID.
 
 ## Step 2: Add the backend
@@ -70,6 +72,8 @@ const FAMILY_API_URLS = {
 - Rows without a name are omitted. Tap a card for Person A (me), then a card for Person B. The banner shows both titles.
 - Use **Clear selections / 清除选择** to reset both people. Male and female cards have distinct background colors, and spouses are arranged male-left/female-right.
 - Drag to pan; pinch or use + / − / ⤢ to zoom.
+- A step-parent badge is inferred when a person is the recorded spouse of a parent but is not listed as the child's other parent. The tree keeps parent-child lines attached to the IDs in `Father_ID` and `Mother_ID`; it does not turn a step-parent into a biological-parent connection.
+- For divorce, the former partner remains represented in the child's parent links. A dotted couple line is shown only for a pair listed in `Spouse_ID`. The current sheet schema cannot label a relationship explicitly as “divorced” or store several former spouses; that needs a separate relationship-history field/table.
 
 ## Good to know
 
@@ -81,4 +85,4 @@ const FAMILY_API_URLS = {
 - Parent's siblings use the preferred short titles `舅舅`, `阿姨`, `姑姑`, `伯伯`, or `叔叔`, without `大`/`小` age prefixes.
 - Their spouses use `舅妈`, `姨丈`, `伯母`, `婶婶`, or `姑丈`, also without `大`/`小` age prefixes.
 - Titles can differ by region (for example 舅舅 versus 娘舅). The library picks its standard Mandarin title.
-- Very large families (50+ people in one generation) will need zooming out; the layout is one row per generation.
+- The full Sio tree has about 300 cards, so it works best as a zoomable overview. Use **Focus Person A's family** to read a smaller branch on a phone or tablet. The focused tree includes Person A's spouse, the spouse's children, and the children's recorded other parent where available.

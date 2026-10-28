@@ -39,6 +39,7 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 .card.female{background:#ffe6ee;border-color:#bd6682}
 .card .n{width:100%;text-align:center;font:700 21px/1.2 var(--serif);overflow-wrap:anywhere;}
 .card .y{font-size:16px;color:#344957}
+.card .role{position:absolute;left:8px;bottom:7px;font:600 11px/1.1 var(--sans);color:#60427d;background:#f3eaff;border:1px solid #c7a9e6;border-radius:8px;padding:2px 5px}
 .card .g{position:absolute;top:5px;right:9px;font-size:16px;color:#263a4a}
 .card.A{border-color:var(--a);box-shadow:0 0 0 4px var(--a),0 3px 10px rgba(16,32,44,.2)}
 .card.B{border-color:var(--b);box-shadow:0 0 0 4px var(--b),0 3px 10px rgba(16,32,44,.2)}
@@ -433,21 +434,29 @@ async function layout({people, byId}){
     rows.get(y).push(p);
   });
   const rowGap = 74;
-  const rowWidth = row => row.length * W + Math.max(0, row.length - 1) * rowGap;
-  const maxRowWidth = Math.max(0, ...[...rows.values()].map(rowWidth));
+  const familyKeyForParents = parents => `parents:${parents.filter(Boolean).sort().join("|")}`;
   const birthFamilyKey = p => {
     const parents = [p.father, p.mother].filter(Boolean).sort();
-    if (parents.length) return `parents:${parents.join("|")}`;
+    if (parents.length) return familyKeyForParents(parents);
     const spouse = byId[p.spouse];
     if (spouse) {
       const spouseParents = [spouse.father, spouse.mother].filter(Boolean).sort();
-      if (spouseParents.length) return `parents:${spouseParents.join("|")}`;
+      if (spouseParents.length) return familyKeyForParents(spouseParents);
+      return `root:${[p.id, spouse.id].sort().join("|")}`;
     }
+    // A named parent and a placeholder co-parent must occupy the same family
+    // block even when only one of them has their own parent records.
+    const knownCoParent = [...(coParents.get(p.id) || [])].map(id => byId[id]).find(other => other && (other.father || other.mother));
+    if (knownCoParent) return familyKeyForParents([knownCoParent.father, knownCoParent.mother]);
+    const unknownCoParents = [...(coParents.get(p.id) || [])].sort();
+    if (unknownCoParents.length) return `co-parents:${[p.id, ...unknownCoParents].sort().join("|")}`;
     return `root:${p.id}`;
   };
   [...rows.entries()].sort((a, b) => a[0] - b[0]).forEach(([, row]) => {
-    // Sort family branches below the parents' current positions, then keep
-    // each sibling group in birth order (including spouses alongside them).
+    // Pack each sibling group as a block, centered below its parents. Keep the
+    // blocks in parent order and siblings in birth order, with spouses beside
+    // their partner. This avoids turning a large generation into one shuffled
+    // row where children appear visually detached from the correct branch.
     const groups = new Map();
     row.forEach(p => {
       const key = birthFamilyKey(p);
@@ -462,11 +471,20 @@ async function layout({people, byId}){
       }
       return Math.min(...members.map(p => pos[p.id].x));
     };
-    const orderedRow = [...groups.values()]
-      .sort((a, b) => groupAnchorX(a) - groupAnchorX(b))
-      .flatMap(members => members.sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity)));
-    const startX = 24 + (maxRowWidth - rowWidth(row)) / 2;
-    orderedRow.forEach((p, i) => { pos[p.id].x = startX + i * (W + rowGap); });
+    const blocks = [...groups.values()].map(members => {
+      members.sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity));
+      return {members, anchor: groupAnchorX(members), width: members.length * W + Math.max(0, members.length - 1) * rowGap};
+    }).sort((a, b) => a.anchor - b.anchor);
+    let cursor = -Infinity;
+    blocks.forEach(block => {
+      block.left = Math.max(block.anchor - block.width / 2, cursor + rowGap);
+      cursor = block.left + block.width;
+    });
+    const right = cursor;
+    const left = blocks.length ? blocks[0].left : 24;
+    const occupiedWidth = right - left;
+    const shift = 24 + Math.max(0, (row.length * W + Math.max(0, row.length - 1) * rowGap - occupiedWidth) / 2) - left;
+    blocks.forEach(block => block.members.forEach((p, i) => { pos[p.id].x = block.left + shift + i * (W + rowGap); }));
   });
   people.forEach(p => {
     const spouse = byId[p.spouse];
@@ -474,7 +492,9 @@ async function layout({people, byId}){
     if (p.gender === "M" && spouse.gender === "F" && pos[p.id].x > pos[spouse.id].x) [pos[p.id].x, pos[spouse.id].x] = [pos[spouse.id].x, pos[p.id].x];
     if (p.gender === "F" && spouse.gender === "M" && pos[p.id].x > pos[spouse.id].x) [pos[p.id].x, pos[spouse.id].x] = [pos[spouse.id].x, pos[p.id].x];
   });
-  return {pos, unionPos, totalW: graph.width + 48, totalH: graph.height + 64, unionNodes};
+  const laidOutRight = Math.max(0, ...Object.values(pos).map(p => p.x + W));
+  const laidOutBottom = Math.max(0, ...Object.values(pos).map(p => p.y + H));
+  return {pos, unionPos, totalW: Math.max(graph.width + 48, laidOutRight + 48), totalH: Math.max(graph.height + 64, laidOutBottom + 64), unionNodes};
 }
 
 /* ---------- KINSHIP ENGINE ---------- */
@@ -625,7 +645,10 @@ function focusSelectedFamily(){
       add(p.id); add(p.spouse);
     }
   });
-  let frontier = [selA];
+  // Start descendant search from both the selected person and their spouse so
+  // a spouse's children from a prior relationship are shown as stepchildren;
+  // their own recorded biological parents are added with each child below.
+  let frontier = [selA, person.spouse].filter(Boolean);
   for (let depth = 0; depth < 2; depth++){
     const next = [];
     data.people.forEach(child => {
@@ -651,6 +674,16 @@ function render(){
   const visibleIds = new Set(viewPeople.map(p => p.id));
   const renderedChildren = new Set(), renderedSpouses = new Set();
   const cards = viewPeople.map(p => ({id: p.id, ...L.pos[p.id], right: L.pos[p.id].x + W, bottom: L.pos[p.id].y + H}));
+  const stepParentRoles = new Map();
+  data.people.forEach(child => {
+    const parents = [child.father, child.mother].filter(Boolean);
+    if (parents.length < 2 || parents[0] === parents[1]) return;
+    parents.forEach(parentId => {
+      const parent = data.byId[parentId], spouse = parent && data.byId[parent.spouse];
+      if (!spouse || parents.includes(spouse.id)) return;
+      stepParentRoles.set(spouse.id, spouse.gender === "F" ? "Stepmother · 继母" : "Stepfather · 继父");
+    });
+  });
   let hiddenFamilySegments = 0, hiddenSpouseSegments = 0, familyPathCount = 0;
   const hiddenFamilyDetails = [], hiddenSpouseDetails = [];
   let lastSegmentBlockers = [];
@@ -750,6 +783,10 @@ function render(){
     c.classList.add(p.gender === "M" ? "male" : p.gender === "F" ? "female" : "unknown");
     c.innerHTML = `<span class="n"></span><span class="y">${p.birth || ""}</span>`;
     c.querySelector(".n").textContent = p.name;
+    if (stepParentRoles.has(p.id)) {
+      const badge = document.createElement("span"); badge.className = "role"; badge.textContent = stepParentRoles.get(p.id);
+      c.appendChild(badge);
+    }
     stage.appendChild(c);
   });
   paint();
