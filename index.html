@@ -107,7 +107,7 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 /* ---------- CONFIG ---------- */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyD2y2MyeEyfJVcwB5MSyh0ktVdWF0nCXgKtN8pm3hPOCM01fDADU7ps_gEdqBfnsW4g/exec";
 const FAMILY_PARAM = new URLSearchParams(location.search).get("family") || "";
-const FAMILY_CODES = new Set(["chong"]);
+const FAMILY_CODES = new Set(["chong", "sio"]);
 const familyStorageKey = family => `kinship_passkey_${family.trim().toLowerCase()}`;
 const DEMO = APPS_SCRIPT_URL.startsWith("YOUR_");   // placeholder not replaced → demo data
 
@@ -145,7 +145,7 @@ function normalize(rows){
 /* ---------- AUTH FLOW ---------- */
 const $ = s => document.querySelector(s);
 const gate = $("#gate");
-function askPass(msg = ""){ $("#gmsg").textContent = msg; $("#gkey").value = ""; $("#gbtn").disabled = false; gate.classList.add("show"); setTimeout(() => $("#gfamily").focus(), 50); }
+function askPass(msg = ""){ if (FAMILY_PARAM) $("#gfamily").value = FAMILY_PARAM; $("#gmsg").textContent = msg; $("#gkey").value = ""; $("#gbtn").disabled = false; gate.classList.add("show"); setTimeout(() => $("#gkey").focus(), 50); }
 
 async function load(family, key){
   family = family.trim();

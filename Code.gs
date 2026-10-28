@@ -12,6 +12,11 @@ const FAMILIES = {
     spreadsheetId: "", // blank uses the spreadsheet this script is attached to
     sheetName: "People",
     passcodeProperty: "FAMILY_PASSCODE"
+  },
+  sio: {
+    spreadsheetId: "1OhdkGVzFfRDG6aUs7sWGXkQrVqSUfvGHDXVAQR_El6A",
+    sheetName: "People",
+    passcodeProperty: "SIO_FAMILY_PASSCODE"
   }
 };
 

@@ -37,6 +37,10 @@ Rules for the data:
 5. Authorize when asked, then copy the **Web app URL** (ends with `/exec`).
 6. Test it: open `YOUR_URL?family=Chong&key=YOUR_PASSCODE` in a browser. A successful response should contain `data` as an array. A wrong family or passcode returns `{"status":"error",...}`.
 
+The Sio family is configured as `sio` and uses the spreadsheet ID supplied by the family manager. Its data tab must be named `People`, with the same eight headers. In **Script Properties**, add `SIO_FAMILY_PASSCODE` with the family's chosen passcode. The passcode is not stored in this repository. Then deploy a new Apps Script version and publish the updated site. The Sio family link is `https://kongjin0808.github.io/Family-Kinship/?family=Sio`.
+
+For the supplied Sio workbook, import the private `Sio-People-import.csv` file into the Sio spreadsheet as a tab named `People`. It contains 288 named workbook records plus 15 clearly labeled placeholders for people explicitly named as parents but missing full records. Keep both `苏峇璽` records; their English names distinguish them. The CSV is ignored by Git and is not part of the public site repository. The import uses `English name (中文名)` for display, with Chinese-only names where no English name was supplied.
+
 To add another family later, add its lowercase code to `FAMILY_CODES` in `index.html` and to the `FAMILIES` object in `Code.gs`, with that sheet's spreadsheet ID, tab name, and a unique Script Property name (for example `FAMILY_LEE_PASSCODE`). Add the passcode under that property in Script Properties, then deploy a new Apps Script version and publish the updated site. Share the same Pages site with that family code in the query string, such as `?family=lee`. Do not put passcodes in `Code.gs`, `index.html`, or GitHub.
 
 Whenever you change `Code.gs`, use **Deploy > Manage deployments > Edit > New version**, or the old code keeps running. Editing Sheet rows needs no redeploy.
