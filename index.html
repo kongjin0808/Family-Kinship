@@ -154,6 +154,7 @@ function normalize(rows, familyCode = ""){
   }).filter(row => !repair || sid(row.ID) !== repair.replaceId.from);
   const people = sourceRows.map(r => ({
     id: sid(r.ID), name: sid(r.Name),
+    placeholder: /\(parent details not in source\)/i.test(sid(r.Name) || ""),
     gender: /^(f|female|女)/i.test(sid(r.Gender)||"") ? "F" : /^(m|male|男)/i.test(sid(r.Gender)||"") ? "M" : null,
     father: sid(r.Father_ID), mother: sid(r.Mother_ID), spouse: sid(r.Spouse_ID),
     birth: Number(sid(r.Birth_Year)) || 0,
@@ -244,6 +245,7 @@ function computeGenerations({people, byId}){
   const visiting = new Set();
   function generationOf(p){
     if (gen[p.id] !== undefined) return gen[p.id];
+    if (p.placeholder) return gen[p.id] = -1;
     // Ignore only the edge that closes a cycle. This prevents corrupt parent
     // references from creating hundreds of phantom generations.
     if (visiting.has(p.id)) return null;
@@ -261,7 +263,13 @@ function computeGenerations({people, byId}){
   for (let pass = 0; pass < people.length; pass++){
     let changed = false;
     people.forEach(p => {
+      if (p.placeholder) return;
       const spouse = byId[p.spouse];
+      if (!p.father && !p.mother && spouse && spouse.placeholder && gen[p.id] !== -1){
+        gen[p.id] = -1;
+        changed = true;
+        return;
+      }
       if (!p.father && !p.mother && spouse && (spouse.father || spouse.mother) && gen[p.id] !== gen[spouse.id]){
         gen[p.id] = gen[spouse.id];
         changed = true;
@@ -387,13 +395,16 @@ function layout({people, byId}, gen){
     lanesByChildGen[childGen] = laneEnds.length;
   });
   let y = 62;
-  const maxGeneration = Math.max(...Object.keys(tiers).map(Number));
-  for (let g = 0; g <= maxGeneration; g++) {
+  const generations = Object.keys(tiers).map(Number).sort((a, b) => a - b);
+  for (let i = 0; i < generations.length; i++) {
+    const g = generations[i];
     (tiers[g] || []).forEach(p => { pos[p.id].y = y; });
-    if (g < maxGeneration) {
-      const laneCount = lanesByChildGen[g + 1] || 1;
-      const requiredGap = 24 + (laneCount + 1) * 9;
-      y += H + Math.max(GY, requiredGap);
+    if (i < generations.length - 1) {
+      const nextGeneration = generations[i + 1];
+      const laneCount = lanesByChildGen[nextGeneration] || 1;
+      const requiredGap = 24 + (laneCount + 1) * 18;
+      const missingRows = Math.max(0, nextGeneration - g - 1);
+      y += H + Math.max(GY, requiredGap) + missingRows * (H + GY);
     }
   }
   const finalTotalW = maxX - minX + 40;
