@@ -602,7 +602,12 @@ function focusSelectedFamily(){
     const next = [];
     data.people.forEach(child => {
       if (!frontier.some(id => child.father === id || child.mother === id)) return;
-      add(child.id); add(child.spouse); next.push(child.id);
+      add(child.id); add(child.spouse);
+      // Keep both recorded parents visible for each descendant. This matters
+      // for divorced families where the selected person's current spouse is
+      // a step-parent and the children's other biological parent is different.
+      add(child.father); add(child.mother);
+      next.push(child.id);
     });
     frontier = next;
   }
