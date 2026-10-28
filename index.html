@@ -105,11 +105,14 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 <script src="https://cdn.jsdelivr.net/npm/relationship.js/dist/relationship.min.js"></script>
 <script>
 /* ---------- CONFIG ---------- */
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyD2y2MyeEyfJVcwB5MSyh0ktVdWF0nCXgKtN8pm3hPOCM01fDADU7ps_gEdqBfnsW4g/exec";
+const FAMILY_API_URLS = {
+  chong: "https://script.google.com/macros/s/AKfycbzyD2y2MyeEyfJVcwB5MSyh0ktVdWF0nCXgKtN8pm3hPOCM01fDADU7ps_gEdqBfnsW4g/exec",
+  sio: "" // Add the Sio Web App /exec URL after deploying its separate script.
+};
 const FAMILY_PARAM = new URLSearchParams(location.search).get("family") || "";
-const FAMILY_CODES = new Set(["chong", "sio"]);
+const FAMILY_CODES = new Set(Object.keys(FAMILY_API_URLS));
 const familyStorageKey = family => `kinship_passkey_${family.trim().toLowerCase()}`;
-const DEMO = APPS_SCRIPT_URL.startsWith("YOUR_");   // placeholder not replaced → demo data
+const DEMO = Object.values(FAMILY_API_URLS).every(url => !url); // no family endpoint configured → demo data
 
 const MOCK_ROWS = [
   {ID:"1", Name:"王建国", Gender:"M", Father_ID:null, Mother_ID:null, Spouse_ID:"2", Birth_Year:1940, Sibling_Rank:1},
@@ -149,15 +152,22 @@ function askPass(msg = ""){ if (FAMILY_PARAM) $("#gfamily").value = FAMILY_PARAM
 
 async function load(family, key){
   family = family.trim();
-  if (!FAMILY_CODES.has(family.toLowerCase())){
+  const familyCode = family.toLowerCase();
+  if (!FAMILY_CODES.has(familyCode)){
     setStatus("");
     askPass("Family not set up yet. / 该家族尚未设置");
+    return;
+  }
+  const endpoint = FAMILY_API_URLS[familyCode];
+  if (!endpoint){
+    setStatus("");
+    askPass("This family's Apps Script link has not been added yet. / 尚未添加此家族的连接链接");
     return;
   }
   const storageKey = familyStorageKey(family);
   $("#gbtn").disabled = true; setStatus("Loading… 加载中");
   try {
-    const res = await fetch(`${APPS_SCRIPT_URL}?family=${encodeURIComponent(family)}&key=${encodeURIComponent(key)}`);
+    const res = await fetch(`${endpoint}?key=${encodeURIComponent(key)}`);
     const json = await res.json();
     if (!res.ok || !json || !["ok", "success"].includes(json.status) || !Array.isArray(json.data)){
       localStorage.removeItem(storageKey);
@@ -415,7 +425,7 @@ function boot(d){
   if (!data.people.length){ stage.querySelectorAll(".card,.tier-box,.tier-label").forEach(n => n.remove()); svg.innerHTML = ""; $("#banner").innerHTML = '<span class="err">No named people found in the data. 没有找到有姓名的人员</span>'; return; }
   gen = computeGenerations(data); L = layout(data, gen); adj = buildGraph(data);
   render(); fit();
-  if (DEMO) setStatus("Demo data — set APPS_SCRIPT_URL to use your family");
+  if (DEMO) setStatus("Demo data — add a family Apps Script URL to connect live data");
 }
 
 function render(){

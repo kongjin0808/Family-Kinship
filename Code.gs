@@ -1,60 +1,48 @@
 /**
- * Family Kinship backend (Google Apps Script)
+ * Single-family Google Apps Script backend.
  *
- * Sheet: a tab named "People" with this header row (exact spelling):
- *   ID | Name | Gender | Father_ID | Mother_ID | Spouse_ID | Birth_Year | Sibling_Rank
+ * Copy this same file into each family's Apps Script project, opened from
+ * that family's Google Sheet. Each script reads only its bound sheet and
+ * uses its own FAMILY_PASSCODE Script Property.
  *
- * To register another family, add a lowercase family code below and set its
- * passcode in Script Properties. Keep passcodes out of this source file.
+ * Required People tab header:
+ * ID | Name | Gender | Father_ID | Mother_ID | Spouse_ID | Birth_Year | Sibling_Rank
  */
-const FAMILIES = {
-  chong: {
-    spreadsheetId: "1QCMJeN6OLV9NoFIrbK5mqczsBRO_pFjh1VmQZs5NVY8",
-    sheetName: "People",
-    passcodeProperty: "FAMILY_PASSCODE"
-  },
-  sio: {
-    spreadsheetId: "1OgYMWKipHJGPHGEB7FsSnTmPgVxAT0e-7ObIhC9FFto",
-    sheetName: "People",
-    passcodeProperty: "SIO_FAMILY_PASSCODE"
-  }
-};
+const DATA_SHEET_NAME = "People";
+const PASSCODE_PROPERTY = "FAMILY_PASSCODE";
 
 function doGet(e) {
-  const familyName = String((e && e.parameter && e.parameter.family) || "Chong").trim();
-  const family = FAMILIES[familyName.toLowerCase()];
-  if (!family) return json_({ status: "error", message: "Unknown family" });
-
-  const given = String((e && e.parameter && e.parameter.key) || "").trim();
+  const userKey = String((e && e.parameter && e.parameter.key) || "").trim();
   const expected = String(
-    PropertiesService.getScriptProperties().getProperty(family.passcodeProperty) || ""
+    PropertiesService.getScriptProperties().getProperty(PASSCODE_PROPERTY) || ""
   ).trim();
 
-  if (!expected || given !== expected) {
-    return json_({ status: "error", message: "Invalid passcode" });
+  if (!expected || userKey !== expected) {
+    return json_({ status: "error", message: "Invalid family passkey" });
   }
 
-  const spreadsheet = family.spreadsheetId
-    ? SpreadsheetApp.openById(family.spreadsheetId)
-    : SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = spreadsheet.getSheetByName(family.sheetName);
-  if (!sheet) return json_({ status: "error", message: "Sheet not found: " + family.sheetName });
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet && spreadsheet.getSheetByName(DATA_SHEET_NAME);
+  if (!sheet) return json_({ status: "error", message: "Sheet not found: " + DATA_SHEET_NAME });
 
-  const values = sheet.getDataRange().getValues();
-  const headers = values.shift().map(function (h) { return String(h).trim(); });
+  const rows = sheet.getDataRange().getValues();
+  if (!rows.length) return json_({ status: "error", message: "People sheet is empty" });
 
-  const data = values
-    .filter(function (row) { return String(row[0]).trim() !== ""; })
+  const headers = rows.shift().map(function (h) { return String(h).trim(); });
+  const data = rows
+    .filter(function (row) { return String(row[0] || "").trim() !== ""; })
     .map(function (row) {
-      const obj = {};
-      headers.forEach(function (h, i) {
-        const v = row[i];
-        obj[h] = (v === "" || v === null || v === undefined) ? null : String(v).trim();
+      const record = {};
+      headers.forEach(function (header, colIndex) {
+        const value = row[colIndex];
+        record[header] = (value === "" || value === null || value === undefined)
+          ? null
+          : String(value).trim();
       });
-      return obj;
+      return record;
     });
 
-  return json_({ status: "ok", data: data });
+  return json_({ status: "success", data: data });
 }
 
 function json_(obj) {

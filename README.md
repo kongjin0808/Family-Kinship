@@ -8,7 +8,7 @@
 | `Code.gs` | Google Apps Script backend: checks the passcode, returns your Sheet as JSON. |
 | `sample-data.csv` | 6 example people (3 generations) to import into your Sheet. |
 
-The current `index.html` is connected to the Apps Script URL and asks for a family name and passcode. The current family code is `Chong`; the login name field starts blank. A link with `?family=Chong` selects that family's saved browser login if available. If you want to run the built-in demo instead, change `APPS_SCRIPT_URL` back to `YOUR_APPS_SCRIPT_URL_HERE`.
+The app asks for a family name and passcode. `FAMILY_API_URLS` maps each family code to that family's separate Apps Script Web App URL. A link with `?family=Chong` or `?family=Sio` preselects the family and uses that family's saved browser login if available. If all URLs are blank, the built-in demo data is used.
 
 ## Step 1: Create the Google Sheet
 
@@ -26,31 +26,35 @@ Rules for the data:
 
 ## Step 2: Add the backend
 
-1. In the Sheet: **Extensions > Apps Script**.
-2. Delete the default code, paste in `Code.gs`, and save.
-3. The `Code.gs` family registry points each family to its own spreadsheet ID, so the Apps Script project may be attached to either family sheet. Click the gear icon (**Project Settings**) > **Script Properties** and set the passcode property for each family:
+1. In that family's Sheet, choose **Extensions > Apps Script**.
+2. Paste the reusable `Code.gs` template into that family's Apps Script project and save. Each project reads only its own bound spreadsheet's `People` tab.
+3. In **Project Settings > Script Properties**, add:
    - Property: `FAMILY_PASSCODE`
-   - Value: the passcode your family will type (for example `jiating2026`)
+   - Value: the passcode this family will enter
+   Each separate Apps Script project has its own property, so the same property name can hold different family passcodes.
 4. **Deploy > New deployment** > type **Web app**:
    - Execute as: **Me**
    - Who has access: **Anyone**
 5. Authorize when asked, then copy the **Web app URL** (ends with `/exec`).
-6. Test it: open `YOUR_URL?family=Chong&key=YOUR_PASSCODE` in a browser. A successful response should contain `data` as an array. A wrong family or passcode returns `{"status":"error",...}`.
+6. Test it: open `YOUR_URL?key=YOUR_PASSCODE` in a browser. A successful response should contain `data` as an array. A wrong passcode returns `{"status":"error",...}`.
 
-The Sio family is configured as `sio` and points to its own spreadsheet ID. Its data tab must be named `People`, with the same eight headers. In **Script Properties**, add `SIO_FAMILY_PASSCODE` with the family's chosen passcode. The passcode is not stored in this repository. Then deploy a new Apps Script version and publish the updated site. The Sio family link is `https://kongjin0808.github.io/Family-Kinship/?family=Sio`.
+The Sio family has its own Apps Script project and passcode. Its data tab must be named `People`, with the same eight headers. Add the Sio passcode as that project's `FAMILY_PASSCODE` Script Property. The passcode is not stored in this repository. After deploying, add its `/exec` URL to the `sio` entry in `FAMILY_API_URLS` in `index.html`. The Sio family link is `https://kongjin0808.github.io/Family-Kinship/?family=Sio`.
 
 For the supplied Sio workbook, import the private `Sio-People-import.csv` file into the Sio spreadsheet as a tab named `People`. It contains 288 named workbook records plus 15 clearly labeled placeholders for people explicitly named as parents but missing full records. Keep both `苏峇璽` records; their English names distinguish them. The CSV is ignored by Git and is not part of the public site repository. The import uses `English name (中文名)` for display, with Chinese-only names where no English name was supplied.
 
-To add another family later, add its lowercase code to `FAMILY_CODES` in `index.html` and to the `FAMILIES` object in `Code.gs`, with that sheet's spreadsheet ID, tab name, and a unique Script Property name (for example `FAMILY_LEE_PASSCODE`). Add the passcode under that property in Script Properties, then deploy a new Apps Script version and publish the updated site. Share the same Pages site with that family code in the query string, such as `?family=lee`. Do not put passcodes in `Code.gs`, `index.html`, or GitHub.
+To add another family later, create a separate Apps Script project from that family's Sheet, paste in the same `Code.gs` template, set that script's `FAMILY_PASSCODE`, and deploy it. Then add one entry to `FAMILY_API_URLS` in `index.html` using the lowercase family code and that Web App URL. You do not need to edit any existing family's Apps Script. Publish the updated site and share its family link, such as `?family=lee`. Do not put passcodes in `Code.gs`, `index.html`, or GitHub.
 
 Whenever you change `Code.gs`, use **Deploy > Manage deployments > Edit > New version**, or the old code keeps running. Editing Sheet rows needs no redeploy.
 
 ## Step 3: Connect the app
 
-Open `index.html` in a text editor and change the line near the top of the script:
+Open `index.html` in a text editor and add the family code and its Web App URL near the top of the script:
 
 ```js
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/XXXX/exec";
+const FAMILY_API_URLS = {
+  chong: "https://script.google.com/macros/s/CHONG_ID/exec",
+  sio: "https://script.google.com/macros/s/SIO_ID/exec"
+};
 ```
 
 ## Step 4: Share it
