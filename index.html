@@ -46,6 +46,9 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
 .card.A .tag{background:var(--a)}.card.B .tag{background:var(--b)}
 #zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:8px}
 #zoom button{width:48px;height:48px;border-radius:12px;border:2px solid var(--ink);background:#fff;font:700 22px var(--sans);cursor:pointer;box-shadow:0 2px 6px rgba(16,32,44,.2)}
+#tree-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+#tree-actions button{min-height:44px;padding:6px 14px;border:2px solid var(--ink);border-radius:10px;background:#fff;color:var(--ink);font:600 15px var(--sans);cursor:pointer}
+#tree-actions button:hover{background:#edf3f6}
 #status{position:absolute;left:10px;bottom:10px;font-size:13px;color:var(--muted);background:#ffffffe0;padding:2px 8px;border-radius:8px}
 #gate{position:fixed;inset:0;background:rgba(16,32,44,.72);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
 #gate.show{display:flex}
@@ -61,6 +64,8 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
   .top{gap:8px}.top b{font-size:16px}#logout{min-height:42px;padding:0 9px;font-size:12px}
   .pick{gap:6px}.pick button{min-height:62px;font-size:17px;padding:6px 8px}.pick button small{font-size:12px}
   #clear{width:100%;min-height:46px;margin-top:7px;font-size:16px}
+  #tree-actions{display:grid;grid-template-columns:1fr 1fr}
+  #tree-actions button{min-height:46px;padding:6px 8px;font-size:14px}
   #banner{font-size:15px;min-height:64px;padding:8px 10px}#banner .t{font-size:23px}
   #zoom{right:8px;bottom:8px;gap:7px}#zoom button{width:50px;height:50px}
   #status{max-width:calc(100% - 72px);font-size:12px}
@@ -81,6 +86,10 @@ header{padding:8px 12px 10px;background:var(--panel);border-bottom:2px solid var
     <button data-role="B"><small>Person B · 亲戚 (Relative)</small><span id="nameB">Tap a card</span></button>
   </div>
   <button id="clear" type="button">Clear selections / 清除选择</button>
+  <div id="tree-actions">
+    <button id="focus-tree" type="button">Focus Person A's family / 聚焦所选家族</button>
+    <button id="show-tree" type="button">Show whole family / 显示完整家谱</button>
+  </div>
   <div id="banner"></div>
 </header>
 <div id="viewport">
@@ -336,6 +345,12 @@ async function layout({people, byId}){
     if (byId[node.id]) pos[node.id] = {x: node.x + 24, y: node.y + 32};
     else if (unionNodes.has(node.id)) unionPos[node.id] = {x: node.x + 24, y: node.y + 32};
   });
+  people.forEach(p => {
+    const spouse = byId[p.spouse];
+    if (!spouse || p.id > spouse.id || !pos[p.id] || !pos[spouse.id] || Math.abs(pos[p.id].y - pos[spouse.id].y) > 1) return;
+    if (p.gender === "M" && spouse.gender === "F" && pos[p.id].x > pos[spouse.id].x) [pos[p.id].x, pos[spouse.id].x] = [pos[spouse.id].x, pos[p.id].x];
+    if (p.gender === "F" && spouse.gender === "M" && pos[p.id].x > pos[spouse.id].x) [pos[p.id].x, pos[spouse.id].x] = [pos[spouse.id].x, pos[p.id].x];
+  });
   return {pos, unionPos, totalW: graph.width + 48, totalH: graph.height + 64, unionNodes};
 }
 
@@ -441,18 +456,62 @@ function titlesFor(chain, aGender, bGender){
 }
 
 /* ---------- UI ---------- */
-let data, gen, L, adj, activeFamily = FAMILY_PARAM, selA = null, selB = null, role = "A";
+let data, gen, L, adj, viewPeople = [], activeFamily = FAMILY_PARAM, selA = null, selB = null, role = "A";
 const stage = $("#stage"), vp = $("#viewport"), svg = $("#lines");
 let view = {x: 0, y: 0, k: 1};
 function setStatus(t){ $("#status").textContent = t; }
 
 async function boot(d){
-  data = d; selA = selB = null; role = "A";
+  data = d; viewPeople = d.people; selA = selB = null; role = "A";
   if (!data.people.length){ stage.querySelectorAll(".card,.tier-box,.tier-label").forEach(n => n.remove()); svg.innerHTML = ""; $("#banner").innerHTML = '<span class="err">No named people found in the data. 没有找到有姓名的人员</span>'; return; }
   gen = computeGenerations(data); adj = buildGraph(data);
-  try { L = await layout(data, gen); render(); fit(); }
+  try { L = await layout(treeDataForView(), gen); render(); fit(); }
   catch (error) { setStatus(error.message); console.error(error); return; }
   if (DEMO) setStatus("Demo data — add a family Apps Script URL to connect live data");
+}
+
+function treeDataForView(){
+  const visible = new Set(viewPeople.map(p => p.id));
+  const people = viewPeople.map(p => ({
+    ...p,
+    father: visible.has(p.father) ? p.father : null,
+    mother: visible.has(p.mother) ? p.mother : null,
+    spouse: visible.has(p.spouse) ? p.spouse : null
+  }));
+  return {people, byId: Object.fromEntries(people.map(p => [p.id, p]))};
+}
+
+async function showTreeView(people, status){
+  viewPeople = people;
+  try {
+    L = await layout(treeDataForView(), gen);
+    render(); fit(); setStatus(status);
+  } catch (error) { setStatus(error.message); console.error(error); }
+}
+
+function focusSelectedFamily(){
+  if (!selA){ setStatus("Select Person A first. / 请先选择 Person A"); return; }
+  const include = new Set([selA]);
+  const add = id => { if (data.byId[id]) include.add(id); };
+  const person = data.byId[selA];
+  [person.father, person.mother].forEach(add);
+  [person.father, person.mother].map(id => data.byId[id]).filter(Boolean).forEach(parent => add(parent.spouse));
+  data.people.forEach(p => {
+    if (p.id !== selA && ((person.father && p.father === person.father) || (person.mother && p.mother === person.mother))) {
+      add(p.id); add(p.spouse);
+    }
+  });
+  let frontier = [selA];
+  for (let depth = 0; depth < 2; depth++){
+    const next = [];
+    data.people.forEach(child => {
+      if (!frontier.some(id => child.father === id || child.mother === id)) return;
+      add(child.id); add(child.spouse); next.push(child.id);
+    });
+    frontier = next;
+  }
+  if (selB && !include.has(selB)) selB = null;
+  showTreeView(data.people.filter(p => include.has(p.id)), `Focused family: ${include.size} people. / 家庭分支：${include.size} 人`);
 }
 
 function render(){
@@ -482,8 +541,9 @@ function render(){
     }
     paths += `<path d="${d}" fill="none" stroke="#314252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   });
-  data.people.forEach(p => {
+  viewPeople.forEach(p => {
     const s = data.byId[p.spouse]; if (!s || p.id > s.id) return;
+    if (!viewPeople.some(v => v.id === s.id)) return;
     const a = L.pos[p.id], b = L.pos[s.id];
     if (Math.abs(a.y - b.y) < 2 && Math.min(a.x, b.x) + W <= Math.max(a.x, b.x)) {
       const l = a.x < b.x ? a : b, r = a.x < b.x ? b : a;
@@ -491,7 +551,7 @@ function render(){
     }
   });
   svg.innerHTML = paths;
-  data.people.forEach(p => {
+  viewPeople.forEach(p => {
     const c = document.createElement("div"); c.className = "card"; c.dataset.id = p.id;
     c.style.left = L.pos[p.id].x + "px"; c.style.top = L.pos[p.id].y + "px";
     c.classList.add(p.gender === "M" ? "male" : p.gender === "F" ? "female" : "unknown");
@@ -540,6 +600,8 @@ function banner(){
 function choose(id){ if (role === "A"){ selA = id; role = "B"; } else selB = id; paint(); }
 document.querySelectorAll(".pick button").forEach(b => b.onclick = () => { role = b.dataset.role; paint(); });
 $("#clear").onclick = () => { selA = selB = null; role = "A"; paint(); };
+$("#focus-tree").onclick = focusSelectedFamily;
+$("#show-tree").onclick = () => showTreeView(data.people, `Whole family: ${data.people.length} people. / 完整家谱：${data.people.length} 人`);
 
 /* ---------- PAN & ZOOM ---------- */
 function apply(){ stage.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; }
