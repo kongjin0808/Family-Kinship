@@ -312,7 +312,21 @@ async function layout({people, byId}){
 
   const unionNodes = new Map();
   let index = 0;
-  const children = people.map(p => ({id: p.id, width: W, height: H}));
+  const familyKey = p => {
+    const parentIds = [p.father, p.mother].filter(Boolean).sort();
+    if (parentIds.length) return `parents:${parentIds.join("|")}`;
+    const spouse = byId[p.spouse];
+    return spouse && !spouse.father && !spouse.mother
+      ? `root:${[p.id, spouse.id].sort().join("|")}`
+      : `root:${p.id}`;
+  };
+  const orderedPeople = [...people].sort((a, b) => {
+    const familyOrder = familyKey(a).localeCompare(familyKey(b));
+    if (familyOrder) return familyOrder;
+    if (a.birth && b.birth && a.birth !== b.birth) return a.birth - b.birth;
+    return (a.rank ?? 99) - (b.rank ?? 99) || a.id.localeCompare(b.id);
+  });
+  const children = orderedPeople.map(p => ({id: p.id, width: W, height: H}));
   unions.forEach(union => {
     const id = `union_${index++}`;
     union.nodeId = id;
@@ -335,7 +349,8 @@ async function layout({people, byId}){
       "elk.layered.spacing.edgeNodeBetweenLayers": "30",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.crossingMinimization.forceNodeModelOrder": "true"
     },
     children,
     edges
@@ -494,6 +509,7 @@ function focusSelectedFamily(){
   const include = new Set([selA]);
   const add = id => { if (data.byId[id]) include.add(id); };
   const person = data.byId[selA];
+  add(person.spouse);
   [person.father, person.mother].forEach(add);
   [person.father, person.mother].map(id => data.byId[id]).filter(Boolean).forEach(parent => add(parent.spouse));
   data.people.forEach(p => {
@@ -519,6 +535,8 @@ function render(){
   stage.style.width = L.totalW + "px"; stage.style.height = L.totalH + "px";
   svg.setAttribute("width", L.totalW); svg.setAttribute("height", L.totalH);
   let paths = "";
+  const visibleIds = new Set(viewPeople.map(p => p.id));
+  const renderedChildren = new Set(), renderedSpouses = new Set();
   L.unionNodes.forEach(union => {
     if (!union.children.length) return;
     const anchor = L.unionPos[union.nodeId];
@@ -526,29 +544,52 @@ function render(){
     const children = union.children.map(person => ({person, p: L.pos[person.id]})).filter(x => x.p);
     if (!anchor || !parents.length || !children.length) return;
     const parentBottom = Math.max(...parents.map(x => x.p.y + H));
-    const childTop = Math.min(...children.map(x => x.p.y));
-    const busY = Math.max(parentBottom + 12, Math.min(anchor.y + 5, childTop - 12));
     const startX = parents.reduce((sum, x) => sum + x.p.x + W / 2, 0) / parents.length;
     const startY = parents.length > 1 ? Math.min(...parents.map(x => x.p.y)) + H / 2 : parentBottom;
-    const centers = children.map(x => x.p.x + W / 2).sort((a, b) => a - b);
-    let d = `M${startX},${startY} V${busY}`;
-    if (centers.length === 1) {
-      if (centers[0] !== startX) d += ` H${centers[0]}`;
-      d += ` V${childTop}`;
-    } else {
-      d += ` M${centers[0]},${busY} H${centers[centers.length - 1]}`;
-      centers.forEach(cx => { d += ` M${cx},${busY} V${childTop}`; });
-    }
-    paths += `<path d="${d}" fill="none" stroke="#314252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const childRows = new Map();
+    children.forEach(child => {
+      const row = Math.round(child.p.y);
+      if (!childRows.has(row)) childRows.set(row, []);
+      childRows.get(row).push(child);
+    });
+    childRows.forEach(rowChildren => {
+      const childTop = Math.min(...rowChildren.map(x => x.p.y));
+      const busY = Math.max(parentBottom + 12, Math.min(anchor.y + 5, childTop - 12));
+      const centers = rowChildren.map(x => x.p.x + W / 2).sort((a, b) => a - b);
+      let d = `M${startX},${startY} V${busY}`;
+      if (centers.length === 1) {
+        if (centers[0] !== startX) d += ` H${centers[0]}`;
+        d += ` V${childTop}`;
+      } else {
+        d += ` M${centers[0]},${busY} H${centers[centers.length - 1]}`;
+        centers.forEach(cx => { d += ` M${cx},${busY} V${childTop}`; });
+      }
+      paths += `<path d="${d}" fill="none" stroke="#526675" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`;
+      rowChildren.forEach(x => renderedChildren.add(x.person.id));
+    });
   });
   viewPeople.forEach(p => {
     const s = data.byId[p.spouse]; if (!s || p.id > s.id) return;
-    if (!viewPeople.some(v => v.id === s.id)) return;
+    if (!visibleIds.has(s.id)) return;
     const a = L.pos[p.id], b = L.pos[s.id];
-    if (Math.abs(a.y - b.y) < 2 && Math.min(a.x, b.x) + W <= Math.max(a.x, b.x)) {
+    if (!a || !b) return;
+    const key = `${p.id}|${s.id}`;
+    const sameRow = Math.abs(a.y - b.y) < 2;
+    const l = a.x < b.x ? a : b, r = a.x < b.x ? b : a;
+    const blocked = sameRow && viewPeople.some(other => {
+      if (other.id === p.id || other.id === s.id) return false;
+      const q = L.pos[other.id];
+      return q && Math.abs(q.y - l.y) < 2 && q.x < r.x && q.x + W > l.x + W;
+    });
+    if (sameRow && !blocked && l.x + W <= r.x) {
       const l = a.x < b.x ? a : b, r = a.x < b.x ? b : a;
       paths += `<path d="M${l.x + W},${l.y + H / 2} H${r.x}" stroke="#10202c" stroke-width="2" stroke-dasharray="5 4"/>`;
+    } else {
+      const routeY = Math.max(a.y + H, b.y + H) + 14;
+      const ax = a.x + W / 2, bx = b.x + W / 2;
+      paths += `<path d="M${ax},${a.y + H} V${routeY} H${bx} V${b.y + H}" fill="none" stroke="#10202c" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
+    renderedSpouses.add(key);
   });
   svg.innerHTML = paths;
   viewPeople.forEach(p => {
@@ -560,6 +601,21 @@ function render(){
     stage.appendChild(c);
   });
   paint();
+  const expectedChildren = viewPeople.filter(p => visibleIds.has(p.father) || visibleIds.has(p.mother));
+  const spousePairs = viewPeople.filter(p => p.spouse && visibleIds.has(p.spouse) && p.id < p.spouse);
+  const rows = new Map();
+  viewPeople.forEach(p => { const y = Math.round(L.pos[p.id].y); rows.set(y, (rows.get(y) || 0) + 1); });
+  window.__treeAudit = {
+    cards: viewPeople.length,
+    connectorPaths: svg.querySelectorAll("path").length,
+    expectedChildLinks: expectedChildren.length,
+    renderedChildLinks: renderedChildren.size,
+    missingChildLinks: expectedChildren.filter(p => !renderedChildren.has(p.id)).length,
+    expectedSpouseLinks: spousePairs.length,
+    renderedSpouseLinks: renderedSpouses.size,
+    missingSpouseLinks: spousePairs.filter(p => !renderedSpouses.has(`${p.id}|${p.spouse}`)).length,
+    rowCounts: [...rows.values()].sort((a, b) => a - b)
+  };
 }
 
 function paint(){
