@@ -553,6 +553,18 @@ function render(){
   let paths = "";
   const visibleIds = new Set(viewPeople.map(p => p.id));
   const renderedChildren = new Set(), renderedSpouses = new Set();
+  const cards = viewPeople.map(p => ({id: p.id, ...L.pos[p.id], right: L.pos[p.id].x + W, bottom: L.pos[p.id].y + H}));
+  let hiddenFamilySegments = 0, hiddenSpouseSegments = 0, familyPathCount = 0;
+  const segmentIsCovered = (x1, y1, x2, y2, ignored) => cards.some(card => {
+    if (ignored.has(card.id)) return false;
+    if (Math.abs(x1 - x2) < 0.5) {
+      return x1 > card.x + 2 && x1 < card.right - 2 && Math.max(Math.min(y1, y2), card.y + 2) < Math.min(Math.max(y1, y2), card.bottom - 2);
+    }
+    if (Math.abs(y1 - y2) < 0.5) {
+      return y1 > card.y + 2 && y1 < card.bottom - 2 && Math.max(Math.min(x1, x2), card.x + 2) < Math.min(Math.max(x1, x2), card.right - 2);
+    }
+    return false;
+  });
   L.unionNodes.forEach(union => {
     if (!union.children.length) return;
     const anchor = L.unionPos[union.nodeId];
@@ -572,15 +584,27 @@ function render(){
       const childTop = Math.min(...rowChildren.map(x => x.p.y));
       const busY = Math.max(parentBottom + 12, Math.min(anchor.y + 5, childTop - 12));
       const centers = rowChildren.map(x => x.p.x + W / 2).sort((a, b) => a - b);
+      const rowChildIds = new Set(rowChildren.map(x => x.person.id));
+      if (segmentIsCovered(startX, startY, startX, busY, new Set(union.members))) hiddenFamilySegments++;
       let d = `M${startX},${startY} V${busY}`;
       if (centers.length === 1) {
-        if (centers[0] !== startX) d += ` H${centers[0]}`;
+        if (centers[0] !== startX) {
+          if (segmentIsCovered(startX, busY, centers[0], busY, new Set([...union.members, ...rowChildIds]))) hiddenFamilySegments++;
+          d += ` H${centers[0]}`;
+        }
+        if (segmentIsCovered(centers[0], busY, centers[0], childTop, rowChildIds)) hiddenFamilySegments++;
         d += ` V${childTop}`;
       } else {
+        if (segmentIsCovered(centers[0], busY, centers[centers.length - 1], busY, rowChildIds)) hiddenFamilySegments++;
         d += ` M${centers[0]},${busY} H${centers[centers.length - 1]}`;
-        centers.forEach(cx => { d += ` M${cx},${busY} V${childTop}`; });
+        centers.forEach((cx, index) => {
+          const child = rowChildren.find(x => Math.abs(x.p.x + W / 2 - cx) < 0.5);
+          if (child && segmentIsCovered(cx, busY, cx, childTop, new Set([child.person.id]))) hiddenFamilySegments++;
+          d += ` M${cx},${busY} V${childTop}`;
+        });
       }
       paths += `<path d="${d}" fill="none" stroke="#526675" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`;
+      familyPathCount++;
       rowChildren.forEach(x => renderedChildren.add(x.person.id));
     });
   });
@@ -599,10 +623,13 @@ function render(){
     });
     if (sameRow && !blocked && l.x + W <= r.x) {
       const l = a.x < b.x ? a : b, r = a.x < b.x ? b : a;
+      if (segmentIsCovered(l.x + W, l.y + H / 2, r.x, r.y + H / 2, new Set([p.id, s.id]))) hiddenSpouseSegments++;
       paths += `<path d="M${l.x + W},${l.y + H / 2} H${r.x}" stroke="#10202c" stroke-width="2" stroke-dasharray="5 4"/>`;
     } else {
       const routeY = Math.max(a.y + H, b.y + H) + 14;
       const ax = a.x + W / 2, bx = b.x + W / 2;
+      const ignorePair = new Set([p.id, s.id]);
+      if (segmentIsCovered(ax, a.y + H, ax, routeY, ignorePair) || segmentIsCovered(ax, routeY, bx, routeY, ignorePair) || segmentIsCovered(bx, routeY, bx, b.y + H, ignorePair)) hiddenSpouseSegments++;
       paths += `<path d="M${ax},${a.y + H} V${routeY} H${bx} V${b.y + H}" fill="none" stroke="#10202c" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
     renderedSpouses.add(key);
@@ -621,12 +648,19 @@ function render(){
   const spousePairs = viewPeople.filter(p => p.spouse && visibleIds.has(p.spouse) && p.id < p.spouse);
   const rows = new Map();
   viewPeople.forEach(p => { const y = Math.round(L.pos[p.id].y); rows.set(y, (rows.get(y) || 0) + 1); });
+  const expectedConnectorPaths = familyPathCount + spousePairs.length;
+  const connectorPaths = svg.querySelectorAll("path").length;
   const audit = {
     cards: viewPeople.length,
-    connectorPaths: svg.querySelectorAll("path").length,
+    connectorPaths,
+    expectedConnectorPaths,
+    extraConnectorPaths: Math.max(0, connectorPaths - expectedConnectorPaths),
+    missingConnectorPaths: Math.max(0, expectedConnectorPaths - connectorPaths),
+    missingChildLinks: expectedChildren.filter(p => !renderedChildren.has(p.id)).length,
+    hiddenFamilySegments,
+    hiddenSpouseSegments,
     expectedChildLinks: expectedChildren.length,
     renderedChildLinks: renderedChildren.size,
-    missingChildLinks: expectedChildren.filter(p => !renderedChildren.has(p.id)).length,
     expectedSpouseLinks: spousePairs.length,
     renderedSpouseLinks: renderedSpouses.size,
     missingSpouseLinks: spousePairs.filter(p => !renderedSpouses.has(`${p.id}|${p.spouse}`)).length,
