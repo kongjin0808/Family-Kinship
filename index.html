@@ -395,6 +395,26 @@ async function layout({people, byId}){
     if (byId[node.id]) pos[node.id] = {x: node.x + 24, y: node.y + 32};
     else if (unionNodes.has(node.id)) unionPos[node.id] = {x: node.x + 24, y: node.y + 32};
   });
+  // ELK's crossing minimizer can ignore the requested model order when a
+  // generation contains several disconnected roots. Keep its vertical ranks,
+  // but lay each row out in our explicit family/birth order. This makes sibling
+  // chronology and co-parent adjacency deterministic across a large tree.
+  const orderIndex = new Map(orderedPeople.map((p, i) => [p.id, i]));
+  const rows = new Map();
+  people.forEach(p => {
+    if (!pos[p.id]) return;
+    const y = Math.round(pos[p.id].y);
+    if (!rows.has(y)) rows.set(y, []);
+    rows.get(y).push(p);
+  });
+  const rowGap = 74;
+  const rowWidth = row => row.length * W + Math.max(0, row.length - 1) * rowGap;
+  const maxRowWidth = Math.max(0, ...[...rows.values()].map(rowWidth));
+  rows.forEach(row => {
+    row.sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity));
+    const startX = 24 + (maxRowWidth - rowWidth(row)) / 2;
+    row.forEach((p, i) => { pos[p.id].x = startX + i * (W + rowGap); });
+  });
   people.forEach(p => {
     const spouse = byId[p.spouse];
     if (!spouse || p.id > spouse.id || !pos[p.id] || !pos[spouse.id] || Math.abs(pos[p.id].y - pos[spouse.id].y) > 1) return;
