@@ -360,6 +360,31 @@ async function layout({people, byId}){
       if (spouse) addInOrder(spouse);
     });
   });
+  // A placeholder parent may be discovered only after the real parent was
+  // already placed by another relationship (for example, a divorced parent
+  // with a new spouse/step-parent). Pull that placeholder next to its co-parent
+  // so the children's shared parent stem has a clear junction.
+  const moveAfter = (anchorId, movingId) => {
+    const movingIndex = orderedPeople.findIndex(p => p.id === movingId);
+    const anchorIndex = orderedPeople.findIndex(p => p.id === anchorId);
+    if (movingIndex < 0 || anchorIndex < 0 || movingIndex === anchorIndex + 1) return;
+    const [moving] = orderedPeople.splice(movingIndex, 1);
+    const nextAnchorIndex = orderedPeople.findIndex(p => p.id === anchorId);
+    orderedPeople.splice(nextAnchorIndex + 1, 0, moving);
+  };
+  unions.forEach(union => {
+    if (!union.children.length || union.members.length !== 2) return;
+    const [first, second] = union.members.map(id => byId[id]).filter(Boolean);
+    if (!first || !second) return;
+    const firstPlaceholder = first.placeholder, secondPlaceholder = second.placeholder;
+    if (firstPlaceholder && !secondPlaceholder) moveAfter(second.id, first.id);
+    else if (secondPlaceholder && !firstPlaceholder) moveAfter(first.id, second.id);
+    else if (firstPlaceholder && secondPlaceholder) {
+      const firstIndex = orderedPeople.findIndex(p => p.id === first.id);
+      const secondIndex = orderedPeople.findIndex(p => p.id === second.id);
+      if (firstIndex >= 0 && secondIndex >= 0) moveAfter(firstIndex < secondIndex ? first.id : second.id, firstIndex < secondIndex ? second.id : first.id);
+    }
+  });
   people.forEach(addInOrder);
   const children = orderedPeople.map(p => ({id: p.id, width: W, height: H}));
   unions.forEach(union => {
