@@ -421,10 +421,10 @@ async function layout({people, byId}){
     if (byId[node.id]) pos[node.id] = {x: node.x + 24, y: node.y + 32};
     else if (unionNodes.has(node.id)) unionPos[node.id] = {x: node.x + 24, y: node.y + 32};
   });
-  // ELK's crossing minimizer can ignore the requested model order when a
-  // generation contains several disconnected roots. Keep its vertical ranks,
-  // but lay each row out in our explicit family/birth order. This makes sibling
-  // chronology and co-parent adjacency deterministic across a large tree.
+  // Keep the generation rows from ELK, then repack them using each branch's
+  // descendant width. Equal-width cards alone are not enough: four sibling
+  // couples with 2/4/2/4 children need enough room under each couple, or their
+  // child buses overlap into one misleading line across the whole generation.
   const orderIndex = new Map(orderedPeople.map((p, i) => [p.id, i]));
   const rows = new Map();
   people.forEach(p => {
@@ -433,7 +433,7 @@ async function layout({people, byId}){
     if (!rows.has(y)) rows.set(y, []);
     rows.get(y).push(p);
   });
-  const rowGap = 74;
+  const rowGap = 90, coupleGap = 28;
   const familyKeyForParents = parents => `parents:${parents.filter(Boolean).sort().join("|")}`;
   const birthFamilyKey = p => {
     const parents = [p.father, p.mother].filter(Boolean).sort();
@@ -452,11 +452,49 @@ async function layout({people, byId}){
     if (unknownCoParents.length) return `co-parents:${[p.id, ...unknownCoParents].sort().join("|")}`;
     return `root:${p.id}`;
   };
+  const familyUnions = [...unions.values()].filter(union => union.children.length);
+  const unionWidthCache = new Map(), unitWidthCache = new Map();
+  const widthStack = new Set();
+  const unitMembers = person => {
+    const spouse = byId[person.spouse];
+    if (!spouse || !pos[spouse.id] || Math.round(pos[spouse.id].y) !== Math.round(pos[person.id].y) || birthFamilyKey(spouse) !== birthFamilyKey(person)) return [person];
+    return [person, spouse].sort((a, b) => {
+      if (a.gender !== b.gender && a.gender && b.gender) return a.gender === "M" ? -1 : 1;
+      return a.id.localeCompare(b.id);
+    });
+  };
+  const unitWidth = person => {
+    const members = unitMembers(person);
+    const key = members.map(member => member.id).sort().join("|");
+    if (unitWidthCache.has(key)) return unitWidthCache.get(key);
+    if (widthStack.has(`unit:${key}`)) return members.length * W + (members.length > 1 ? coupleGap : 0);
+    widthStack.add(`unit:${key}`);
+    const childrenUnions = familyUnions.filter(union => union.members.some(id => members.some(member => member.id === id)));
+    const branches = childrenUnions.map(unionWidth);
+    const descendants = branches.reduce((sum, width, index) => sum + width + (index ? rowGap : 0), 0);
+    const cardsWidth = members.length * W + (members.length > 1 ? coupleGap : 0);
+    const width = Math.max(cardsWidth, descendants);
+    widthStack.delete(`unit:${key}`);
+    unitWidthCache.set(key, width);
+    return width;
+  };
+  function unionWidth(union){
+    if (unionWidthCache.has(union.key)) return unionWidthCache.get(union.key);
+    if (widthStack.has(`union:${union.key}`)) return Math.max(W, union.children.length * (W + rowGap) - rowGap);
+    widthStack.add(`union:${union.key}`);
+    const orderedChildren = [...union.children].sort((a, b) => {
+      if (a.birth && b.birth && a.birth !== b.birth) return a.birth - b.birth;
+      return (a.rank ?? 99) - (b.rank ?? 99) || a.id.localeCompare(b.id);
+    });
+    const widths = orderedChildren.map(unitWidth);
+    const width = Math.max(W, widths.reduce((sum, value, index) => sum + value + (index ? rowGap : 0), 0));
+    widthStack.delete(`union:${union.key}`);
+    unionWidthCache.set(union.key, width);
+    return width;
+  }
   [...rows.entries()].sort((a, b) => a[0] - b[0]).forEach(([, row]) => {
-    // Pack each sibling group as a block, centered below its parents. Keep the
-    // blocks in parent order and siblings in birth order, with spouses beside
-    // their partner. This avoids turning a large generation into one shuffled
-    // row where children appear visually detached from the correct branch.
+    // Pack each sibship as an independent branch. A child's reserved width is
+    // the larger of the couple card width and that couple's descendant span.
     const groups = new Map();
     row.forEach(p => {
       const key = birthFamilyKey(p);
@@ -469,29 +507,38 @@ async function layout({people, byId}){
         const parents = [byId[child.father], byId[child.mother]].filter(p => p && pos[p.id]);
         if (parents.length) return parents.reduce((sum, p) => sum + pos[p.id].x + W / 2, 0) / parents.length;
       }
-      return Math.min(...members.map(p => pos[p.id].x));
+      return members.reduce((sum, p) => sum + pos[p.id].x + W / 2, 0) / members.length;
     };
     const blocks = [...groups.values()].map(members => {
       members.sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity));
-      return {members, anchor: groupAnchorX(members), width: members.length * W + Math.max(0, members.length - 1) * rowGap};
+      const units = [], assigned = new Set();
+      members.forEach(person => {
+        if (assigned.has(person.id)) return;
+        const unit = unitMembers(person).filter(member => members.some(candidate => candidate.id === member.id));
+        unit.forEach(member => assigned.add(member.id));
+        units.push({members: unit, width: unitWidth(person), order: Math.min(...unit.map(member => orderIndex.get(member.id) ?? Infinity))});
+      });
+      units.sort((a, b) => a.order - b.order);
+      const width = units.reduce((sum, unit, index) => sum + unit.width + (index ? rowGap : 0), 0);
+      return {members, units, anchor: groupAnchorX(members), width};
     }).sort((a, b) => a.anchor - b.anchor);
     let cursor = -Infinity;
     blocks.forEach(block => {
       block.left = Math.max(block.anchor - block.width / 2, cursor + rowGap);
       cursor = block.left + block.width;
     });
-    const right = cursor;
-    const left = blocks.length ? blocks[0].left : 24;
-    const occupiedWidth = right - left;
-    const shift = 24 + Math.max(0, (row.length * W + Math.max(0, row.length - 1) * rowGap - occupiedWidth) / 2) - left;
-    blocks.forEach(block => block.members.forEach((p, i) => { pos[p.id].x = block.left + shift + i * (W + rowGap); }));
+    blocks.forEach(block => {
+      let x = block.left;
+      block.units.forEach(unit => {
+        const cardWidth = unit.members.length * W + (unit.members.length > 1 ? coupleGap : 0);
+        let cardX = x + (unit.width - cardWidth) / 2;
+        unit.members.forEach(person => { pos[person.id].x = cardX; cardX += W + coupleGap; });
+        x += unit.width + rowGap;
+      });
+    });
   });
-  people.forEach(p => {
-    const spouse = byId[p.spouse];
-    if (!spouse || p.id > spouse.id || !pos[p.id] || !pos[spouse.id] || Math.abs(pos[p.id].y - pos[spouse.id].y) > 1) return;
-    if (p.gender === "M" && spouse.gender === "F" && pos[p.id].x > pos[spouse.id].x) [pos[p.id].x, pos[spouse.id].x] = [pos[spouse.id].x, pos[p.id].x];
-    if (p.gender === "F" && spouse.gender === "M" && pos[p.id].x > pos[spouse.id].x) [pos[p.id].x, pos[spouse.id].x] = [pos[spouse.id].x, pos[p.id].x];
-  });
+  const minX = Math.min(24, ...Object.values(pos).map(p => p.x));
+  Object.values(pos).forEach(p => { p.x += 24 - minX; });
   const laidOutRight = Math.max(0, ...Object.values(pos).map(p => p.x + W));
   const laidOutBottom = Math.max(0, ...Object.values(pos).map(p => p.y + H));
   return {pos, unionPos, totalW: Math.max(graph.width + 48, laidOutRight + 48), totalH: Math.max(graph.height + 64, laidOutBottom + 64), unionNodes};
@@ -608,9 +655,12 @@ async function boot(d){
   data = d; viewPeople = d.people; selA = selB = null; role = "A";
   if (!data.people.length){ stage.querySelectorAll(".card,.tier-box,.tier-label").forEach(n => n.remove()); svg.innerHTML = ""; $("#banner").innerHTML = '<span class="err">No named people found in the data. 没有找到有姓名的人员</span>'; return; }
   gen = computeGenerations(data); adj = buildGraph(data);
+  const largeFamily = data.people.length > 60;
+  if (largeFamily) viewPeople = data.people.filter(p => p.placeholder || gen[p.id] <= 1);
   try { L = await layout(treeDataForView(), gen); render(); fit(); }
   catch (error) { setStatus(error.message); console.error(error); return; }
-  if (DEMO) setStatus("Demo data — add a family Apps Script URL to connect live data");
+  if (largeFamily) setStatus("Overview: " + viewPeople.length + " of " + data.people.length + " people, first two generations. Select a person and focus their branch. / 家族总览：" + viewPeople.length + "/" + data.people.length + " 人；点选后可查看分支。");
+  else if (DEMO) setStatus("Demo data — add a family Apps Script URL to connect live data");
 }
 
 function treeDataForView(){
@@ -648,17 +698,17 @@ function focusSelectedFamily(){
   // Start descendant search from both the selected person and their spouse so
   // a spouse's children from a prior relationship are shown as stepchildren;
   // their own recorded biological parents are added with each child below.
-  let frontier = [selA, person.spouse].filter(Boolean);
-  for (let depth = 0; depth < 2; depth++){
+  let frontier = [selA, person.spouse].filter(Boolean), visitedDescendants = new Set(frontier);
+  while (frontier.length){
     const next = [];
     data.people.forEach(child => {
-      if (!frontier.some(id => child.father === id || child.mother === id)) return;
+      if (visitedDescendants.has(child.id) || !frontier.some(id => child.father === id || child.mother === id)) return;
       add(child.id); add(child.spouse);
       // Keep both recorded parents visible for each descendant. This matters
       // for divorced families where the selected person's current spouse is
       // a step-parent and the children's other biological parent is different.
       add(child.father); add(child.mother);
-      next.push(child.id);
+      next.push(child.id); visitedDescendants.add(child.id);
     });
     frontier = next;
   }
@@ -685,6 +735,7 @@ function render(){
     });
   });
   let hiddenFamilySegments = 0, hiddenSpouseSegments = 0, familyPathCount = 0;
+  const familyBuses = [];
   const hiddenFamilyDetails = [], hiddenSpouseDetails = [];
   let lastSegmentBlockers = [];
   const segmentIsCovered = (x1, y1, x2, y2, ignored) => {
@@ -704,6 +755,7 @@ function render(){
     hiddenFamilySegments++;
     hiddenFamilyDetails.push({type, parents: union.members, children: rowChildren.map(x => x.person.id), blockers: [...lastSegmentBlockers]});
   };
+  const familyRoutes = [];
   L.unionNodes.forEach(union => {
     if (!union.children.length) return;
     const parents = union.members.map(id => ({id, p: L.pos[id]})).filter(x => x.p);
@@ -719,12 +771,38 @@ function render(){
     });
     childRows.forEach(rowChildren => {
       const childTop = Math.min(...rowChildren.map(x => x.p.y));
-      // Anchor the sibling bus in the clear gap between generations. ELK's
-      // hidden union-node coordinates become stale after we pack sibling
-      // blocks ourselves, so they must not be used to place visible routes.
-      const gap = childTop - parentBottom;
-      const busY = parentBottom + Math.max(8, Math.min(38, gap / 2));
       const centers = rowChildren.map(x => x.p.x + W / 2).sort((a, b) => a - b);
+      const parentCenters = parents.map(x => x.p.x + W / 2);
+      familyRoutes.push({union, parents, rowChildren, parentBottom, childTop, parentCenters, centers,
+        left: Math.min(...parentCenters, ...centers), right: Math.max(...parentCenters, ...centers),
+        row: Math.round(childTop)});
+    });
+  });
+  // A large family can contain several distinct parent unions whose horizontal
+  // spans overlap (especially after divorce/remarriage). Put those buses on
+  // separate levels in the generation gap so they stay visually separate.
+  const routesByRow = new Map();
+  familyRoutes.forEach(route => {
+    if (!routesByRow.has(route.row)) routesByRow.set(route.row, []);
+    routesByRow.get(route.row).push(route);
+  });
+  routesByRow.forEach(routes => {
+    const lanes = [];
+    routes.sort((a, b) => a.left - b.left || a.right - b.right);
+    routes.forEach(route => {
+      let lane = lanes.findIndex(lastRight => lastRight < route.left - 2);
+      if (lane < 0) lane = lanes.length;
+      lanes[lane] = route.right;
+      route.lane = lane;
+    });
+    routes.forEach(route => { route.laneCount = lanes.length; });
+  });
+  familyRoutes.forEach(route => {
+      const {union, parents, rowChildren, parentBottom, childTop, parentCenters, centers} = route;
+      const gap = Math.max(1, childTop - parentBottom);
+      // Keep lane spacing within the actual inter-generation gap. This remains
+      // valid when a compact focused branch has less vertical room than a full tree.
+      const busY = parentBottom + gap * (route.lane + 1) / (route.laneCount + 1);
       const rowChildIds = new Set(rowChildren.map(x => x.person.id));
       let d = "";
       // Use one vertical drop per recorded parent. This connects the couple
@@ -739,6 +817,7 @@ function render(){
       });
       const busLeft = Math.min(...parentCenters, ...centers);
       const busRight = Math.max(...parentCenters, ...centers);
+      familyBuses.push({parents: union.members, children: rowChildren.map(x => x.person.id), y: busY, left: busLeft, right: busRight});
       if (segmentIsCovered(busLeft, busY, busRight, busY, new Set([...union.members, ...rowChildIds]))) recordHiddenFamily("sibling-bus", union, rowChildren);
       d += ` M${busLeft},${busY} H${busRight}`;
       if (centers.length === 1) {
@@ -757,7 +836,6 @@ function render(){
         renderedChildren.add(x.person.id);
         union.members.forEach(parentId => renderedParentLinks.add(`${parentId}|${x.person.id}`));
       });
-    });
   });
   viewPeople.forEach(p => {
     const s = data.byId[p.spouse]; if (!s || p.id > s.id) return;
@@ -811,6 +889,11 @@ function render(){
   viewPeople.forEach(p => { const y = Math.round(L.pos[p.id].y); rows.set(y, (rows.get(y) || 0) + 1); });
   const expectedConnectorPaths = familyPathCount + spousePairs.length;
   const connectorPaths = svg.querySelectorAll("path").length;
+  const overlappingFamilyBuses = [];
+  familyBuses.forEach((a, i) => familyBuses.slice(i + 1).forEach(b => {
+    const overlap = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    if (Math.abs(a.y - b.y) < 1 && overlap > 2) overlappingFamilyBuses.push({a: {parents: a.parents, children: a.children}, b: {parents: b.parents, children: b.children}, overlap});
+  }));
   const audit = {
     cards: viewPeople.length,
     connectorPaths,
@@ -823,6 +906,7 @@ function render(){
     missingParentLinks: expectedParentLinks.filter(key => !renderedParentLinks.has(key)),
     hiddenFamilySegments,
     hiddenFamilyDetails,
+    overlappingFamilyBuses,
     hiddenSpouseSegments,
     hiddenSpouseDetails,
     expectedChildLinks: expectedChildren.length,
