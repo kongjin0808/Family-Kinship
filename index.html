@@ -672,7 +672,7 @@ function render(){
   svg.setAttribute("width", L.totalW); svg.setAttribute("height", L.totalH);
   let paths = "";
   const visibleIds = new Set(viewPeople.map(p => p.id));
-  const renderedChildren = new Set(), renderedSpouses = new Set();
+  const renderedChildren = new Set(), renderedParentLinks = new Set(), renderedSpouses = new Set();
   const cards = viewPeople.map(p => ({id: p.id, ...L.pos[p.id], right: L.pos[p.id].x + W, bottom: L.pos[p.id].y + H}));
   const stepParentRoles = new Map();
   data.people.forEach(child => {
@@ -706,13 +706,11 @@ function render(){
   };
   L.unionNodes.forEach(union => {
     if (!union.children.length) return;
-    const anchor = L.unionPos[union.nodeId];
     const parents = union.members.map(id => ({id, p: L.pos[id]})).filter(x => x.p);
     const children = union.children.map(person => ({person, p: L.pos[person.id]})).filter(x => x.p);
-    if (!anchor || !parents.length || !children.length) return;
+    if (!parents.length || !children.length) return;
     const parentBottom = Math.max(...parents.map(x => x.p.y + H));
-    const startX = parents.reduce((sum, x) => sum + x.p.x + W / 2, 0) / parents.length;
-    const startY = parents.length > 1 ? Math.min(...parents.map(x => x.p.y)) + H / 2 : parentBottom;
+    const parentCenters = parents.map(x => x.p.x + W / 2);
     const childRows = new Map();
     children.forEach(child => {
       const row = Math.round(child.p.y);
@@ -721,22 +719,33 @@ function render(){
     });
     childRows.forEach(rowChildren => {
       const childTop = Math.min(...rowChildren.map(x => x.p.y));
-      const busY = Math.max(parentBottom + 12, Math.min(anchor.y + 5, childTop - 12));
+      // Anchor the sibling bus in the clear gap between generations. ELK's
+      // hidden union-node coordinates become stale after we pack sibling
+      // blocks ourselves, so they must not be used to place visible routes.
+      const gap = childTop - parentBottom;
+      const busY = parentBottom + Math.max(8, Math.min(38, gap / 2));
       const centers = rowChildren.map(x => x.p.x + W / 2).sort((a, b) => a - b);
       const rowChildIds = new Set(rowChildren.map(x => x.person.id));
-      if (segmentIsCovered(startX, startY, startX, busY, new Set(union.members))) recordHiddenFamily("parent-stem", union, rowChildren);
-      let d = `M${startX},${startY} V${busY}`;
+      let d = "";
+      // Use one vertical drop per recorded parent. This connects the couple
+      // to the child bus without starting inside a card or relying on a
+      // disconnected SVG subpath. For a single recorded parent this is just
+      // that parent's own drop.
+      parentCenters.forEach(cx => {
+        const parent = parents.find(x => Math.abs(x.p.x + W / 2 - cx) < 0.5);
+        const fromY = parent.p.y + H;
+        if (segmentIsCovered(cx, fromY, cx, busY, new Set(union.members))) recordHiddenFamily("parent-stem", union, rowChildren);
+        d += `M${cx},${fromY} V${busY}`;
+      });
+      const busLeft = Math.min(...parentCenters, ...centers);
+      const busRight = Math.max(...parentCenters, ...centers);
+      if (segmentIsCovered(busLeft, busY, busRight, busY, new Set([...union.members, ...rowChildIds]))) recordHiddenFamily("sibling-bus", union, rowChildren);
+      d += ` M${busLeft},${busY} H${busRight}`;
       if (centers.length === 1) {
-        if (centers[0] !== startX) {
-          if (segmentIsCovered(startX, busY, centers[0], busY, new Set([...union.members, ...rowChildIds]))) recordHiddenFamily("single-child-bridge", union, rowChildren);
-          d += ` H${centers[0]}`;
-        }
         if (segmentIsCovered(centers[0], busY, centers[0], childTop, rowChildIds)) recordHiddenFamily("single-child-drop", union, rowChildren);
-        d += ` V${childTop}`;
+        d += ` M${centers[0]},${busY} V${childTop}`;
       } else {
-        if (segmentIsCovered(centers[0], busY, centers[centers.length - 1], busY, rowChildIds)) recordHiddenFamily("sibling-bus", union, rowChildren);
-        d += ` M${centers[0]},${busY} H${centers[centers.length - 1]}`;
-        centers.forEach((cx, index) => {
+        centers.forEach(cx => {
           const child = rowChildren.find(x => Math.abs(x.p.x + W / 2 - cx) < 0.5);
           if (child && segmentIsCovered(cx, busY, cx, childTop, new Set([child.person.id]))) recordHiddenFamily("child-drop", union, [child]);
           d += ` M${cx},${busY} V${childTop}`;
@@ -744,7 +753,10 @@ function render(){
       }
       paths += `<path d="${d}" fill="none" stroke="#526675" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`;
       familyPathCount++;
-      rowChildren.forEach(x => renderedChildren.add(x.person.id));
+      rowChildren.forEach(x => {
+        renderedChildren.add(x.person.id);
+        union.members.forEach(parentId => renderedParentLinks.add(`${parentId}|${x.person.id}`));
+      });
     });
   });
   viewPeople.forEach(p => {
@@ -791,6 +803,9 @@ function render(){
   });
   paint();
   const expectedChildren = viewPeople.filter(p => visibleIds.has(p.father) || visibleIds.has(p.mother));
+  const expectedParentLinks = viewPeople.flatMap(p => [p.father, p.mother]
+    .filter(parentId => parentId && visibleIds.has(parentId))
+    .map(parentId => `${parentId}|${p.id}`));
   const spousePairs = viewPeople.filter(p => p.spouse && visibleIds.has(p.spouse) && p.id < p.spouse);
   const rows = new Map();
   viewPeople.forEach(p => { const y = Math.round(L.pos[p.id].y); rows.set(y, (rows.get(y) || 0) + 1); });
@@ -803,6 +818,9 @@ function render(){
     extraConnectorPaths: Math.max(0, connectorPaths - expectedConnectorPaths),
     missingConnectorPaths: Math.max(0, expectedConnectorPaths - connectorPaths),
     missingChildLinks: expectedChildren.filter(p => !renderedChildren.has(p.id)).length,
+    expectedParentLinks: expectedParentLinks.length,
+    renderedParentLinks: expectedParentLinks.filter(key => renderedParentLinks.has(key)).length,
+    missingParentLinks: expectedParentLinks.filter(key => !renderedParentLinks.has(key)),
     hiddenFamilySegments,
     hiddenFamilyDetails,
     hiddenSpouseSegments,
