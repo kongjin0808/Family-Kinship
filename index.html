@@ -539,10 +539,31 @@ async function layout({people, byId}){
       const width = units.reduce((sum, unit, index) => sum + unit.width + (index ? rowGap : 0), 0);
       return {members, units, width, anchor: groupAnchorX(members)};
     }).sort((a, b) => a.anchor - b.anchor);
-    let cursor = -Infinity;
-    blocks.forEach(block => {
-      block.left = Math.max(block.anchor - block.width / 2, cursor + rowGap);
-      cursor = block.left + block.width;
+    // A left-to-right greedy packer only moves later branches. On a very
+    // large generation that one-way drift can move children far away from
+    // their parents. Project the preferred centers onto non-overlapping
+    // intervals so both sides share the adjustment; wider descendant trees
+    // keep proportionally more of their preferred alignment.
+    let offset = 0;
+    const constrained = blocks.map((block, i) => {
+      if (i) offset += (blocks[i - 1].width + block.width) / 2 + rowGap;
+      return {block, offset, target: block.anchor - offset, weight: Math.max(1, block.width / W)};
+    });
+    const pools = [];
+    constrained.forEach((point, i) => {
+      pools.push({start: i, end: i, weight: point.weight, mean: point.target});
+      while (pools.length > 1 && pools[pools.length - 2].mean > pools[pools.length - 1].mean) {
+        const right = pools.pop(), left = pools.pop(), weight = left.weight + right.weight;
+        pools.push({start: left.start, end: right.end, weight,
+          mean: (left.mean * left.weight + right.mean * right.weight) / weight});
+      }
+    });
+    const centers = new Array(blocks.length);
+    pools.forEach(pool => {
+      for (let i = pool.start; i <= pool.end; i++) centers[i] = pool.mean + constrained[i].offset;
+    });
+    blocks.forEach((block, i) => {
+      block.left = centers[i] - block.width / 2;
       let x = block.left;
       block.units.forEach(unit => {
         const cardWidth = unit.members.length * W + (unit.members.length > 1 ? coupleGap : 0);
@@ -550,6 +571,69 @@ async function layout({people, byId}){
         unit.members.forEach(person => { pos[person.id].x = cardX; cardX += W + coupleGap; });
         x += unit.width + rowGap;
       });
+    });
+  });
+  // Finish from the youngest generation upward: center each recorded couple
+  // over the actual span of its children, then separate any cards that would
+  // collide in that row. The width pass above protects descendant branches;
+  // this pass corrects the visible parent-to-child alignment within them.
+  const parentChildren = new Map();
+  familyUnions.forEach(union => {
+    if (union.members.length !== 2) return;
+    const [a, b] = union.members.map(id => byId[id]);
+    if (!a || !b || !(a.spouse === b.id || b.spouse === a.id)) return;
+    const couple = unitMembers(a);
+    if (couple.length !== 2 || !couple.every(person => union.members.includes(person.id))) return;
+    const key = couple.map(person => person.id).sort().join("|");
+    parentChildren.set(key, union.children);
+  });
+  const bottomUpRows = new Map();
+  people.forEach(person => {
+    if (!pos[person.id]) return;
+    const y = Math.round(pos[person.id].y);
+    if (!bottomUpRows.has(y)) bottomUpRows.set(y, []);
+    bottomUpRows.get(y).push(person);
+  });
+  [...bottomUpRows.entries()].sort((a, b) => b[0] - a[0]).forEach(([y, row]) => {
+    const rowIds = new Set(row.map(person => person.id)), seen = new Set(), units = [];
+    row.forEach(person => {
+      if (seen.has(person.id)) return;
+      const members = unitMembers(person).filter(member => rowIds.has(member.id));
+      members.forEach(member => seen.add(member.id));
+      const key = members.map(member => member.id).sort().join("|");
+      const original = members.reduce((sum, member) => sum + pos[member.id].x + W / 2, 0) / members.length;
+      const children = parentChildren.get(key) || [];
+      let target = original, weight = 1;
+      if (children.length && children.every(child => Math.round(pos[child.id].y) > y)) {
+        const childLeft = Math.min(...children.map(child => pos[child.id].x));
+        const childRight = Math.max(...children.map(child => pos[child.id].x + W));
+        target = (childLeft + childRight) / 2;
+        weight = Math.max(1, children.length);
+      }
+      units.push({members, original, target, weight, width: members.length * W + (members.length > 1 ? coupleGap : 0)});
+    });
+    // Preserve the existing generation order while projecting preferred
+    // centers onto non-overlapping card intervals.
+    units.sort((a, b) => a.original - b.original);
+    let offset = 0;
+    const points = units.map((unit, i) => {
+      if (i) offset += (units[i - 1].width + unit.width) / 2 + rowGap;
+      return {unit, offset, value: unit.target - offset, weight: unit.weight};
+    });
+    const pools = [];
+    points.forEach((point, i) => {
+      pools.push({start: i, end: i, weight: point.weight, mean: point.value});
+      while (pools.length > 1 && pools[pools.length - 2].mean > pools[pools.length - 1].mean) {
+        const right = pools.pop(), left = pools.pop(), weight = left.weight + right.weight;
+        pools.push({start: left.start, end: right.end, weight,
+          mean: (left.mean * left.weight + right.mean * right.weight) / weight});
+      }
+    });
+    pools.forEach(pool => {
+      for (let i = pool.start; i <= pool.end; i++) {
+        const point = points[i], center = pool.mean + point.offset, dx = center - point.unit.original;
+        point.unit.members.forEach(member => { pos[member.id].x += dx; });
+      }
     });
   });
   const minX = Math.min(24, ...Object.values(pos).map(p => p.x));
